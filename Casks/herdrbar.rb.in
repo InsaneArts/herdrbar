@@ -1,0 +1,17 @@
+cask "herdrbar" do
+  version "@VERSION@"
+  sha256 "@SHA256@"
+
+  url "https://github.com/InsaneArts/herdrbar/releases/download/v#{version}/Herdrbar-#{version}.zip"
+  name "Herdrbar"
+  desc "Menu bar companion for herdr: see which agent needs you and jump to it"
+  homepage "https://github.com/InsaneArts/herdrbar"
+
+  depends_on macos: ">= :sequoia"
+
+  app "Herdrbar.app"
+
+  uninstall quit: "com.tornikegomareli.Herdrbar"
+
+  zap trash: "~/Library/Preferences/com.tornikegomareli.Herdrbar.plist"
+end
