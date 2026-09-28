@@ -99,6 +99,16 @@ final class StatusMenu: NSObject, NSMenuDelegate {
             idle.submenu = submenu
             menu.addItem(idle)
         }
+        if !model.problems.isEmpty {
+            menu.addItem(.separator())
+            for problem in model.problems {
+                // herdr's window shows the reconnect details, so a click opens it.
+                let item = actionItem(problem.label, #selector(openHerdr))
+                item.subtitle = problem.detail
+                item.image = NSImage(systemSymbolName: "exclamationmark.triangle", accessibilityDescription: "Machine problem")
+                menu.addItem(item)
+            }
+        }
         if case .tooOld = model.notice {
             menu.addItem(disabledItem("Run brew upgrade herdr"))
         }

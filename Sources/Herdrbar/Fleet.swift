@@ -54,6 +54,11 @@ struct Fleet: Sendable {
 
     func agent(_ key: AgentKey) -> Agent? { machines[key.machine]?.agents[key] }
 
+    /// Drops a machine that is no longer saved or enabled in herdr.
+    mutating func forget(machine label: String) {
+        machines[label] = nil
+    }
+
     mutating func apply(_ result: Result<Snapshot, any Error>, machine label: String, now: Date) -> Transitions {
         var machine = machines[label] ?? Machine(label: label)
         defer { machines[label] = machine }

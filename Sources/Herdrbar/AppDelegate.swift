@@ -33,6 +33,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private let peek = PeekPanel()
     private var screens: [AgentKey: (lines: [String], at: Date)] = [:]
     private var highlighted: AgentKey?
+    /// Pollers for the saved SSH machines, by machine id.
+    private var remotes: [String: (poller: RemotePoller, task: Task<Void, Never>)] = [:]
     private var tasks: [Task<Void, Never>] = []
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -41,6 +43,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         self.source = source
         menu.onWillOpen = { [weak self] in
             self?.source?.refresh()
+            self?.remotes.values.forEach { $0.poller.refresh() }
             self?.render()
         }
         menu.onSelect = { [weak self] key in self?.jump(to: key) }
@@ -56,6 +59,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             await self?.apply(result, machine: Fleet.local)
         }
         tasks.append(Task { await source.run(publish: publish) })
+        // Saved machines come and go rarely: look again every 5 minutes.
+        tasks.append(Task { [weak self] in
+            while !Task.isCancelled {
+                await self?.discoverMachines()
+                try? await Task.sleep(for: .seconds(300))
+            }
+        })
         // Keeps "4m" labels moving. Task.sleep, unlike a default-mode Timer, also fires while the menu is open.
         tasks.append(Task { [weak self] in
             while !Task.isCancelled {
@@ -110,10 +120,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private func jump(to key: AgentKey) {
         notifier.withdraw(key)
         guard let agent = fleet.agent(key) else { return }
+        let remote = machine(labeled: key.machine)
         Task {
-            await jump.to(agent, install: install)
+            await jump.to(agent, machine: remote?.poller.machine, install: install)
             source?.refresh()
+            remote?.poller.refresh()
         }
+    }
+
+    private func machine(labeled label: String) -> (poller: RemotePoller, task: Task<Void, Never>)? {
+        remotes.values.first { $0.poller.machine.label == label }
+    }
+
+    /// Starts a poller for each enabled saved machine and stops those that were removed or disabled.
+    private func discoverMachines() async {
+        guard let herdr = install.binary, let machines = try? await RemoteSource.machines(herdr: herdr) else { return }
+        let ids = Set(machines.map(\.id))
+        for (id, remote) in remotes where !ids.contains(id) {
+            remote.task.cancel()
+            remotes[id] = nil
+            fleet.forget(machine: remote.poller.machine.label)
+        }
+        for machine in machines where remotes[machine.id] == nil && machine.label != Fleet.local {
+            let poller = RemotePoller(machine: machine, herdr: herdr)
+            let label = machine.label
+            let publish: @Sendable (Result<Snapshot, any Error>) async -> Void = { [weak self] result in
+                await self?.apply(result, machine: label)
+            }
+            remotes[machine.id] = (poller, Task { await poller.run(publish: publish) })
+        }
+        render()
     }
 
     private func hotkeyPressed(_ action: HotkeyAction) {
@@ -133,14 +169,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// for a few seconds; never written to notifications, because agent output can contain secrets.
     private func highlight(_ row: AgentRow?) {
         highlighted = row?.key
-        guard let row, row.key.machine == Fleet.local, let agent = fleet.agent(row.key),
-              let place = menu.openMenuFrame else { return peek.hide() }
+        guard let row, let agent = fleet.agent(row.key), let place = menu.openMenuFrame else { return peek.hide() }
         let cached = screens[row.key].flatMap { Date.now.timeIntervalSince($0.at) < 3 ? $0.lines : nil }
         peek.show(row, lines: cached, beside: place.frame, on: place.screen)
         guard cached == nil else { return }
         let socket = install.socketPath, pane = agent.paneID
+        let remote = machine(labeled: row.key.machine)?.poller.machine, herdr = install.binary
         Task {
-            let lines = await Self.readScreen(pane: pane, socket: socket)
+            let lines = if let remote, let herdr {
+                await Self.readRemoteScreen(pane: pane, machine: remote, herdr: herdr)
+            } else {
+                await Self.readScreen(pane: pane, socket: socket)
+            }
             screens[row.key] = (lines, .now)
             guard highlighted == row.key, let place = menu.openMenuFrame else { return }
             peek.show(row, lines: lines, beside: place.frame, on: place.screen)
@@ -155,6 +195,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         guard isSafeID(pane), let line = try? await Herdr.call("agent.read", Params(target: pane), socket: socket),
               let result = try? decodeReply(line, as: AgentReadResult.self) else { return ["Can't read this agent's screen."] }
         return Peek.lines(from: result.read.text)
+    }
+
+    private static func readRemoteScreen(pane: String, machine: SavedMachine, herdr: String) async -> [String] {
+        guard isSafeID(pane), isSafeID(machine.id), let text = try? await CLI.run(
+            [herdr, "--machine", machine.id, "agent", "read", pane, "--source", "detection"], timeout: RemoteSource.timeout)
+        else { return ["Can't read this agent's screen."] }
+        return Peek.lines(from: String(decoding: text, as: UTF8.self))
     }
 
     private func showSettings() {

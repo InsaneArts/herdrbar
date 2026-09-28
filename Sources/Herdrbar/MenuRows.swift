@@ -16,6 +16,12 @@ struct AgentRow: Equatable, Sendable {
     var subtitle: String
 }
 
+/// A saved machine that could not be read for a while.
+struct MachineProblem: Equatable, Sendable {
+    var label: String
+    var detail: String
+}
+
 struct MenuModel: Equatable, Sendable {
     enum Notice: Equatable, Sendable {
         case connecting, nothingNeedsYou, noAgents, notRunning, notInstalled, tooOld(version: String)
@@ -36,6 +42,7 @@ struct MenuModel: Equatable, Sendable {
     var needsYou: [AgentRow] = []
     var working: [AgentRow] = []
     var idle: [AgentRow] = []
+    var problems: [MachineProblem] = []
     /// Blocked plus done agents: the number next to the menu bar icon.
     var attention = 0
     var anyBlocked = false
@@ -66,33 +73,30 @@ enum MenuRows {
         return .live
     }
 
+    /// While the local herdr can't be used, the menu says why and still lists the saved machines' agents.
     static func model(fleet: Fleet, local: LocalState, now: Date) -> MenuModel {
         var model = MenuModel()
         switch local {
         case .connecting:
             model.notice = .connecting
             model.tooltip = "Connecting to Herdr"
-            return model
         case .notRunning:
             model.notice = .notRunning
             model.herdrDown = true
             model.tooltip = "Herdr isn't running"
-            return model
         case .notInstalled:
             model.notice = .notInstalled
             model.herdrDown = true
             model.tooltip = "Herdr isn't installed"
-            return model
         case .tooOld(let version):
             model.notice = .tooOld(version: version)
             model.herdrDown = true
             model.tooltip = "Herdr \(version) is too old"
-            return model
         case .live:
             break
         }
 
-        let agents = fleet.agents
+        let agents = fleet.agents.filter { local == .live || $0.key.machine != Fleet.local }
         let rows = Dictionary(uniqueKeysWithValues: rows(for: agents, now: now).map { ($0.key, $0) })
         let waiting = agents.filter(\.status.needsYou).sorted(by: needsYouOrder)
         let working = agents.filter { $0.status == .working }.sorted(by: workspaceOrder)
@@ -103,13 +107,32 @@ enum MenuRows {
         model.idle = idle.compactMap { rows[$0.key] }
         model.attention = waiting.count
         model.anyBlocked = waiting.contains { $0.status == .blocked }
-        if agents.isEmpty {
-            model.notice = .noAgents
-        } else if waiting.isEmpty {
-            model.notice = .nothingNeedsYou
+        model.problems = problems(fleet, now: now)
+        if local == .live {
+            model.notice = agents.isEmpty ? .noAgents : waiting.isEmpty ? .nothingNeedsYou : nil
+            model.tooltip = tooltip(needsYou: waiting.count, working: working.count, idle: idle.count)
         }
-        model.tooltip = tooltip(needsYou: waiting.count, working: working.count, idle: idle.count)
+        for problem in model.problems {
+            model.tooltip += problem.detail == RemoteFailure.needsNewerHerdr.description
+                ? " · \(problem.label) needs herdr 0.9.1" : " · \(problem.label) can't connect"
+        }
         return model
+    }
+
+    /// Saved machines whose last few checks failed. Their agents are hidden and not counted: you can't
+    /// reach them anyway.
+    static func problems(_ fleet: Fleet, now: Date) -> [MachineProblem] {
+        fleet.machines.values
+            .filter { $0.label != Fleet.local && $0.failures > Fleet.toleratedFailures }
+            .sorted { $0.label.localizedStandardCompare($1.label) == .orderedAscending }
+            .map { machine in
+                var detail = machine.lastError ?? RemoteFailure.cantConnect.description
+                if detail == RemoteFailure.cantConnect.description, let seen = machine.lastSuccess {
+                    let ago = duration(since: seen, now: now)
+                    detail += ago == "now" ? " · last seen just now" : " · last seen \(ago) ago"
+                }
+                return MachineProblem(label: machine.label, detail: detail)
+            }
     }
 
     // MARK: Rows

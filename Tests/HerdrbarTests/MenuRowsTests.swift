@@ -161,4 +161,41 @@ import Testing
         machine.serverVersion = "0.9.0"
         #expect(MenuRows.localState(machine: machine, herdrInstalled: true, now: now) == .live)
     }
+
+    // MARK: Remote machines
+
+    @Test func aMachineThatKeepsFailingBecomesOneRow() {
+        var fleet = Fleet()
+        _ = fleet.apply(.success(makeSnapshot([])), machine: Fleet.local, now: now)
+        _ = fleet.apply(.success(makeSnapshot([TestAgent(terminal: "r", pane: "w1:p1", status: .blocked)])),
+                        machine: "build-box", now: now.addingTimeInterval(-150))
+        #expect(MenuRows.model(fleet: fleet, local: .live, now: now).attention == 1)
+        for _ in 0...Fleet.toleratedFailures { _ = fleet.apply(.failure(RemoteFailure.cantConnect), machine: "build-box", now: now) }
+        _ = fleet.apply(.failure(RemoteFailure.needsNewerHerdr), machine: "pi", now: now)
+        _ = fleet.apply(.failure(RemoteFailure.needsNewerHerdr), machine: "pi", now: now)
+        _ = fleet.apply(.failure(RemoteFailure.needsNewerHerdr), machine: "pi", now: now)
+        let model = MenuRows.model(fleet: fleet, local: .live, now: now)
+        #expect(model.problems == [MachineProblem(label: "build-box", detail: "Can't connect · last seen 2m ago"),
+                                   MachineProblem(label: "pi", detail: "Needs herdr 0.9.1 or later")])
+        #expect(model.attention == 0)  // its agents are hidden and not counted
+        #expect(model.tooltip == "No agents running · build-box can't connect · pi needs herdr 0.9.1")
+    }
+
+    @Test func remoteAgentsStayWhileLocalHerdrIsDown() {
+        var fleet = Fleet()
+        _ = fleet.apply(.success(makeSnapshot([TestAgent(terminal: "l", pane: "w1:p1", status: .blocked)])), machine: Fleet.local, now: now)
+        _ = fleet.apply(.success(makeSnapshot([TestAgent(terminal: "r", pane: "w1:p1", status: .blocked)])), machine: "omarchy", now: now)
+        let model = MenuRows.model(fleet: fleet, local: .notRunning, now: now)
+        #expect(model.notice == .notRunning)
+        #expect(model.needsYou.map(\.key.machine) == ["omarchy"])
+        #expect(model.attention == 1)
+    }
+
+    @Test func forgettingAMachineDropsItsAgents() {
+        var fleet = Fleet()
+        _ = fleet.apply(.success(makeSnapshot([TestAgent(terminal: "r", pane: "w1:p1", status: .working)])), machine: "omarchy", now: now)
+        fleet.forget(machine: "omarchy")
+        #expect(fleet.agents.isEmpty && fleet.machines["omarchy"] == nil)
+    }
 }
+

@@ -17,11 +17,15 @@ final class Jump {
         }
     }
 
-    func to(_ agent: Agent, install: HerdrInstall) async {
+    /// `machine` is the saved machine for a remote agent, nil for a local one.
+    func to(_ agent: Agent, machine: SavedMachine? = nil, install: HerdrInstall) async {
         if agent.key.machine == Fleet.local, isSafeID(agent.paneID) {
             // `agent.focus` moves herdr's focus but not the attached client's view in herdr 0.9.0
             // (herdr#3760). `pane.focus` moves both, and also marks a done agent as seen.
             _ = try? await Herdr.call("pane.focus", ["pane_id": agent.paneID], socket: install.socketPath)
+        } else if let machine, let herdr = install.binary, isSafeID(agent.paneID), isSafeID(machine.id) {
+            // Remote machines need herdr 0.9.1, where `agent focus` moves the view again.
+            _ = try? await CLI.run([herdr, "--machine", machine.id, "agent", "focus", agent.paneID], timeout: RemoteSource.timeout)
         }
         await raiseHerdr(install: install)
     }
