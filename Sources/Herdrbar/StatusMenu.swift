@@ -5,6 +5,7 @@ import AppKit
 @MainActor
 final class StatusMenu: NSObject, NSMenuDelegate {
     var onSelect: ((AgentKey) -> Void)?
+    var onOpenHerdr: (() -> Void)?
     var onWillOpen: (() -> Void)?
 
     private let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -80,7 +81,25 @@ final class StatusMenu: NSObject, NSMenuDelegate {
             menu.addItem(disabledItem("Run brew upgrade herdr"))
         }
         menu.addItem(.separator())
+        switch model.notice {
+        case .notInstalled?: menu.addItem(actionItem("Get Herdr", #selector(getHerdr)))
+        case .notRunning?: menu.addItem(actionItem("Start Herdr", #selector(openHerdr), key: "o"))
+        default: menu.addItem(actionItem("Open Herdr", #selector(openHerdr), key: "o"))
+        }
+        menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "Quit Herdrbar", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
+    }
+
+    private func actionItem(_ title: String, _ action: Selector, key: String = "") -> NSMenuItem {
+        let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
+        item.target = self
+        return item
+    }
+
+    @objc private func openHerdr() { onOpenHerdr?() }
+
+    @objc private func getHerdr() {
+        if let url = URL(string: "https://herdr.dev") { NSWorkspace.shared.open(url) }
     }
 
     private func addSection(_ title: String, _ rows: [AgentRow]) {

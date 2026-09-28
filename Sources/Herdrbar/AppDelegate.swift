@@ -6,6 +6,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let menu = StatusMenu()
     private var install = HerdrInstall.locate()
     private var source: LocalSource?
+    private let jump = Jump()
     private var tasks: [Task<Void, Never>] = []
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -14,6 +15,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.onWillOpen = { [weak self] in
             self?.source?.refresh()
             self?.render()
+        }
+        menu.onSelect = { [weak self] key in self?.jump(to: key) }
+        menu.onOpenHerdr = { [weak self] in
+            guard let self else { return }
+            Task { await self.jump.raiseHerdr(install: self.install) }
         }
         let publish: @Sendable (Result<Snapshot, any Error>) async -> Void = { [weak self] result in
             await self?.apply(result, machine: Fleet.local)
@@ -39,6 +45,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if localMachine?.firstFailure != nil { install = HerdrInstall.locate() }
         let local = MenuRows.localState(machine: localMachine, herdrInstalled: install.isInstalled, now: .now)
         menu.update(MenuRows.model(fleet: fleet, local: local, now: .now))
+    }
+
+    private func jump(to key: AgentKey) {
+        guard let agent = fleet.agent(key) else { return }
+        Task {
+            await jump.to(agent, install: install)
+            source?.refresh()
+        }
     }
 }
 
