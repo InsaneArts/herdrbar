@@ -1,15 +1,33 @@
 import AppKit
+import UserNotifications
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
     private var fleet = Fleet()
     private let menu = StatusMenu()
     private var install = HerdrInstall.locate()
     private var source: LocalSource?
     private let jump = Jump()
+    private lazy var notifier = Notifier(.init(
+        post: { notice in
+            let content = UNMutableNotificationContent()
+            content.title = notice.title
+            content.body = notice.body
+            content.sound = notice.playsSound ? .default : nil
+            content.userInfo = ["machine": notice.key.machine, "terminal": notice.key.terminalID]
+            UNUserNotificationCenter.current().add(
+                UNNotificationRequest(identifier: notice.identifier, content: content, trigger: nil), withCompletionHandler: nil)
+        },
+        remove: { identifiers in
+            UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: identifiers)
+        },
+        currentAgent: { [weak self] key in self?.fleet.agent(key) },
+        herdrIsFrontmost: { Self.herdrIsFrontmost() },
+        notifyDone: { UserDefaults.standard.object(forKey: "NotifyDone") as? Bool ?? true }))
     private var tasks: [Task<Void, Never>] = []
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        UNUserNotificationCenter.current().delegate = self
         let source = LocalSource(socketPath: install.socketPath)
         self.source = source
         menu.onWillOpen = { [weak self] in
@@ -33,11 +51,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         })
         render()
+        Task { _ = try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) }
     }
 
     private func apply(_ result: Result<Snapshot, any Error>, machine: String) {
-        _ = fleet.apply(result, machine: machine, now: .now)
+        let transitions = fleet.apply(result, machine: machine, now: .now)
         render()
+        notifier.handle(transitions)
     }
 
     private func render() {
@@ -48,11 +68,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func jump(to key: AgentKey) {
+        notifier.withdraw(key)
         guard let agent = fleet.agent(key) else { return }
         Task {
             await jump.to(agent, install: install)
             source?.refresh()
         }
+    }
+
+    /// herdr's own UI already shows a change while the terminal hosting it is in front. Compared by pid,
+    /// so a second instance of the same terminal app doesn't count.
+    static func herdrIsFrontmost() -> Bool {
+        guard let front = NSWorkspace.shared.frontmostApplication?.processIdentifier else { return false }
+        return ClientLocator.localClients().contains { $0.hostPID == front }
+    }
+
+    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter,
+                                            didReceive response: UNNotificationResponse) async {
+        let info = response.notification.request.content.userInfo
+        guard let machine = info["machine"] as? String, let terminal = info["terminal"] as? String else { return }
+        await MainActor.run { jump(to: AgentKey(machine: machine, terminalID: terminal)) }
+    }
+
+    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter,
+                                            willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
+        [.banner, .list, .sound]
     }
 }
 
