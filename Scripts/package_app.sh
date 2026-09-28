@@ -25,9 +25,14 @@ if [[ ${#ARCH_LIST[@]} -eq 0 ]]; then
   ARCH_LIST=("$HOST_ARCH")
 fi
 
+# One invocation for all architectures: SwiftPM then links a universal binary itself. Building each
+# architecture separately does not work with Swift 6.4's build system, which gives them one output folder.
+ARCH_FLAGS=()
 for ARCH in "${ARCH_LIST[@]}"; do
-  swift build -c "$CONF" --arch "$ARCH"
+  ARCH_FLAGS+=(--arch "$ARCH")
 done
+swift build -c "$CONF" "${ARCH_FLAGS[@]}"
+BIN_DIR="$(swift build -c "$CONF" "${ARCH_FLAGS[@]}" --show-bin-path)"
 
 APP="$ROOT/${APP_NAME}.app"
 rm -rf "$APP"
@@ -70,14 +75,6 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 </plist>
 PLIST
 
-# Ask SwiftPM where it put the products: Swift 6.4's build system uses .build/out/Products/<Config>,
-# older toolchains use .build/<arch>-apple-macosx/<config>.
-build_product_path() {
-  local name="$1"
-  local arch="$2"
-  echo "$(swift build -c "$CONF" --arch "$arch" --show-bin-path)/$name"
-}
-
 verify_binary_arches() {
   local binary="$1"; shift
   local expected=("$@")
@@ -101,21 +98,7 @@ verify_binary_arches() {
 install_binary() {
   local name="$1"
   local dest="$2"
-  local binaries=()
-  for arch in "${ARCH_LIST[@]}"; do
-    local src
-    src=$(build_product_path "$name" "$arch")
-    if [[ ! -f "$src" ]]; then
-      echo "ERROR: Missing ${name} build for ${arch} at ${src}" >&2
-      exit 1
-    fi
-    binaries+=("$src")
-  done
-  if [[ ${#ARCH_LIST[@]} -gt 1 ]]; then
-    lipo -create "${binaries[@]}" -output "$dest"
-  else
-    cp "${binaries[0]}" "$dest"
-  fi
+  cp "$BIN_DIR/$name" "$dest"
   chmod +x "$dest"
   verify_binary_arches "$dest" "${ARCH_LIST[@]}"
 }
@@ -129,7 +112,7 @@ if [[ -d "$APP_RESOURCES_DIR" ]]; then
 fi
 
 # SwiftPM resource bundles are emitted next to the built binary.
-PREFERRED_BUILD_DIR="$(dirname "$(build_product_path "$APP_NAME" "${ARCH_LIST[0]}")")"
+PREFERRED_BUILD_DIR="$BIN_DIR"
 shopt -s nullglob
 SWIFTPM_BUNDLES=("${PREFERRED_BUILD_DIR}/"*.bundle)
 shopt -u nullglob

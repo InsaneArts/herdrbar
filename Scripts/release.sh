@@ -7,6 +7,10 @@ set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 cd "$ROOT"
 source version.env
+# Build releases with the stable Xcode, not whatever xcode-select points at (it may be a beta).
+if [[ -z "${DEVELOPER_DIR:-}" && -d /Applications/Xcode.app/Contents/Developer ]]; then
+  export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
+fi
 APP_IDENTITY=${APP_IDENTITY:-"Developer ID Application: Techzy LLC (539293JFA3)"}
 TEAM_ID=${TEAM_ID:-539293JFA3}
 NOTARY_PROFILE=${NOTARY_PROFILE:-AC_PASSWORD}
@@ -17,7 +21,7 @@ OUT="$ROOT/release/$MARKETING_VERSION"
 [[ ! -e "$OUT" ]] || { echo "$OUT already exists. Remove it, or raise the version." >&2; exit 1; }
 ! git rev-parse -q --verify "refs/tags/v$MARKETING_VERSION" >/dev/null || { echo "Tag v$MARKETING_VERSION already exists." >&2; exit 1; }
 
-echo "==> Herdrbar $MARKETING_VERSION ($BUILD_NUMBER)"
+echo "==> Herdrbar $MARKETING_VERSION ($BUILD_NUMBER) with $(xcodebuild -version | head -1)"
 swift test
 SIGNING_MODE=release APP_IDENTITY="$APP_IDENTITY" ARCHES="arm64 x86_64" Scripts/package_app.sh release
 
