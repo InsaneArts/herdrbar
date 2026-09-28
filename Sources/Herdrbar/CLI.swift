@@ -24,8 +24,14 @@ enum CLI {
         var overflow = false, timedOut = false
     }
 
-    private static func runBlocking(_ argv: [String], timeout: Duration, limit: Int) throws -> Data {
+    /// `Process` is Sendable only in recent SDKs; this box lets the deadline and reader queues share it
+    /// with Xcode 26 too.
+    private final class Child: @unchecked Sendable {
         let process = Process()
+    }
+
+    private static func runBlocking(_ argv: [String], timeout: Duration, limit: Int) throws -> Data {
+        let child = Child(), process = child.process
         process.executableURL = URL(fileURLWithPath: argv[0])
         process.arguments = Array(argv.dropFirst())
         process.standardInput = FileHandle.nullDevice
@@ -36,11 +42,11 @@ enum CLI {
 
         let outcome = Outcome()
         let deadline = DispatchWorkItem {
-            guard process.isRunning else { return }
+            guard child.process.isRunning else { return }
             outcome.timedOut = true
-            process.terminate()
+            child.process.terminate()
             DispatchQueue.global().asyncAfter(deadline: .now() + 2) {
-                if process.isRunning { kill(process.processIdentifier, SIGKILL) }
+                if child.process.isRunning { kill(child.process.processIdentifier, SIGKILL) }
             }
         }
         let seconds = Double(timeout.components.seconds) + Double(timeout.components.attoseconds) / 1e18
@@ -48,11 +54,12 @@ enum CLI {
 
         // Read both pipes at once: a child blocked on a full stderr pipe would never finish stdout.
         let group = DispatchGroup()
+        let output = stdout.fileHandleForReading, errors = stderr.fileHandleForReading
         DispatchQueue.global().async(group: group) {
-            (outcome.output, outcome.overflow) = read(stdout.fileHandleForReading, limit: limit) { process.terminate() }
+            (outcome.output, outcome.overflow) = read(output, limit: limit) { child.process.terminate() }
         }
         DispatchQueue.global().async(group: group) {
-            (outcome.errors, _) = read(stderr.fileHandleForReading, limit: 64 * 1024) {}
+            (outcome.errors, _) = read(errors, limit: 64 * 1024) {}
         }
         group.wait()
         process.waitUntilExit()
