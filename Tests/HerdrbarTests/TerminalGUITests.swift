@@ -42,15 +42,7 @@ struct TerminalGUITests {
         #expect(try await focusedWindow(kitten, address) == herdrWindow)
     }
 
-    /// The window kitty reports as focused in its last-focused OS window.
     private func focusedWindow(_ kitten: String, _ address: String) async throws -> Int? {
-        let listing = try await CLI.run([kitten, "@", "--to", address, "ls"], timeout: .seconds(5))
-        let osWindows = try #require(try JSONSerialization.jsonObject(with: listing) as? [[String: Any]])
-        let active = osWindows.first { $0["is_active"] as? Bool == true } ?? osWindows.first { $0["is_focused"] as? Bool == true }
-        let tabs = active?["tabs"] as? [[String: Any]] ?? []
-        let tab = tabs.first { $0["is_active"] as? Bool == true } ?? tabs.first { $0["is_focused"] as? Bool == true }
-        let windows = tab?["windows"] as? [[String: Any]] ?? []
-        let window = windows.first { $0["is_active"] as? Bool == true } ?? windows.first { $0["is_focused"] as? Bool == true }
-        return window?["id"] as? Int
+        Terminals.focusedKittyWindow(try await CLI.run([kitten, "@", "--to", address, "ls"], timeout: .seconds(5)))
     }
 }

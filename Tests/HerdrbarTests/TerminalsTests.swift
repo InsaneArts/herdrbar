@@ -27,4 +27,10 @@ import Testing
         #expect(Terminals.openPlan(for: Terminals.iTerm, herdr: herdr) == .iTermScript)
         #expect(Terminals.openPlan(for: "com.github.wez.wezterm", herdr: herdr) == nil)
     }
+
+    @Test func readsKittysFocusedWindow() {
+        let listing = Data(#"[{"id":1,"is_active":false,"tabs":[{"is_active":true,"windows":[{"id":2,"is_active":true}]}]},{"id":3,"is_active":true,"tabs":[{"is_active":false,"windows":[{"id":4,"is_active":true}]},{"is_active":true,"windows":[{"id":5,"is_active":false},{"id":6,"is_active":true}]}]}]"#.utf8)
+        #expect(Terminals.focusedKittyWindow(listing) == 6)
+        #expect(Terminals.focusedKittyWindow(Data("not json".utf8)) == nil)
+    }
 }

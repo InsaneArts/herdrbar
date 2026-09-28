@@ -26,7 +26,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: identifiers)
         },
         currentAgent: { [weak self] key in self?.fleet.agent(key) },
-        herdrIsFrontmost: { Self.herdrIsFrontmost() },
+        herdrIsFrontmost: { await Terminals.herdrWindowIsFront(ClientLocator.localClients()) },
         notifyDone: { [weak self] in self?.settings.notifyDone ?? true }))
     private var lastHotkeyJump: AgentKey?
     private let peek = PeekPanel()
@@ -158,13 +158,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             try? await Task.sleep(for: .milliseconds(600))
             menu.open()
         }
-    }
-
-    /// herdr's own UI already shows a change while the terminal hosting it is in front. Compared by pid,
-    /// so a second instance of the same terminal app doesn't count.
-    static func herdrIsFrontmost() -> Bool {
-        guard let front = NSWorkspace.shared.frontmostApplication?.processIdentifier else { return false }
-        return ClientLocator.localClients().contains { $0.hostPID == front }
     }
 
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter,

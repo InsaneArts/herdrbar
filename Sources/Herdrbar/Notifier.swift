@@ -38,8 +38,8 @@ final class Notifier {
         var post: (AgentNotice) -> Void
         var remove: ([String]) -> Void
         var currentAgent: (AgentKey) -> Agent?
-        /// True while the terminal app that hosts herdr is in front: herdr's own UI shows the change.
-        var herdrIsFrontmost: () -> Bool
+        /// True while herdr's window is in front: herdr's own UI shows the change.
+        var herdrIsFrontmost: () async -> Bool
         var notifyDone: () -> Bool
         /// herdr waits a second before its own alerts; a state that flickers never notifies.
         var confirmDelay: Duration = .seconds(1)
@@ -63,7 +63,7 @@ final class Notifier {
                 guard !Task.isCancelled else { return }
                 pending[key] = nil
                 guard let current = environment.currentAgent(key), current.status == status,
-                      !environment.herdrIsFrontmost() else { return }
+                      await !environment.herdrIsFrontmost() else { return }
                 environment.post(AgentNotice(agent: current))
             }
         }

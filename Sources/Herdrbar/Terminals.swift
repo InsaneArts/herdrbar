@@ -15,6 +15,9 @@ enum Terminals {
     static let kitty = "net.kovidgoyal.kitty"
     static let alacritty = "org.alacritty"
 
+    /// The Ghostty terminal that last showed herdr, per Ghostty process, learned from the last jump.
+    private static var ghosttyTerminal: [pid_t: String] = [:]
+
     /// Raises the exact window when the terminal supports it, otherwise the app.
     static func raise(_ client: HerdrClient, socket: String) async {
         guard let pid = client.hostPID, let app = NSRunningApplication(processIdentifier: pid) else { return }
@@ -51,6 +54,7 @@ enum Terminals {
                 if let terminals = app.value(forKey: "terminals") as? SBElementArray,
                    let match = terminals.filtered(using: NSPredicate(format: "name CONTAINS %@", nonce)).first as? SBObject {
                     match.perform(Selector(("focus")))
+                    ghosttyTerminal[pid] = match.value(forKey: "id") as? String
                     found = true
                     break
                 }
@@ -110,14 +114,64 @@ enum Terminals {
     }
 
     /// `kitten @ focus-window`, built from the client's own environment. nil without remote control.
-    static func kittyCommand(environment: [String: String], kittyApp: URL) -> [String]? {
+    nonisolated static func kittyCommand(environment: [String: String], kittyApp: URL) -> [String]? {
         guard let address = environment["KITTY_LISTEN_ON"], address.hasPrefix("unix:") || address.hasPrefix("tcp:"),
               let window = environment["KITTY_WINDOW_ID"], let id = Int(window), id > 0 else { return nil }
         return [kittyApp.appending(path: "Contents/MacOS/kitten").path, "@", "--to", address,
                 "focus-window", "--match", "id:\(id)"]
     }
 
-    static func isSafeTTY(_ tty: String) -> Bool {
+    /// Whether herdr's own window is the one in front, not just any window of its terminal. Falls back to
+    /// "the terminal is in front" when the terminal can't say, or when Automation isn't granted yet: this
+    /// check never asks for permission.
+    static func herdrWindowIsFront(_ clients: [HerdrClient]) async -> Bool {
+        guard let front = NSWorkspace.shared.frontmostApplication,
+              let client = clients.first(where: { $0.hostPID == front.processIdentifier }) else { return false }
+        let pid = front.processIdentifier
+        switch client.hostBundleID {
+        case ghostty:
+            guard let herdrTerminal = ghosttyTerminal[pid], await Automation.granted(bundleID: ghostty),
+                  let app = SBApplication(processIdentifier: pid) else { return true }
+            app.timeout = 60
+            let focused = [ "frontWindow", "selectedTab", "focusedTerminal" ].reduce(app as SBObject?) {
+                $0?.value(forKey: $1) as? SBObject
+            }
+            return (focused?.value(forKey: "id") as? String).map { $0 == herdrTerminal } ?? true
+        case iTerm:
+            guard let tty = client.tty, await Automation.granted(bundleID: iTerm),
+                  let app = SBApplication(processIdentifier: pid) else { return true }
+            app.timeout = 60
+            let session = ["currentWindow", "currentSession"].reduce(app as SBObject?) { $0?.value(forKey: $1) as? SBObject }
+            return (session?.value(forKey: "tty") as? String).map { $0 == tty } ?? true
+        case terminal:
+            guard let tty = client.tty, await Automation.granted(bundleID: terminal),
+                  let app = SBApplication(processIdentifier: pid) else { return true }
+            app.timeout = 60
+            let window = elements(app, "windows").first { $0.value(forKey: "frontmost") as? Bool == true }
+            let tab = window.flatMap { elements($0, "tabs").first { $0.value(forKey: "selected") as? Bool == true } }
+            return (tab?.value(forKey: "tty") as? String).map { $0 == tty } ?? true
+        case kitty:
+            guard let address = client.environment["KITTY_LISTEN_ON"], let window = client.environment["KITTY_WINDOW_ID"],
+                  let bundle = front.bundleURL, let listing = try? await CLI.run(
+                      [bundle.appending(path: "Contents/MacOS/kitten").path, "@", "--to", address, "ls"], timeout: .seconds(2)),
+                  let focused = focusedKittyWindow(listing) else { return true }
+            return String(focused) == window
+        default:
+            return true
+        }
+    }
+
+    /// The active window of kitty's active OS window, from `kitten @ ls`.
+    nonisolated static func focusedKittyWindow(_ listing: Data) -> Int? {
+        func active(_ items: Any?) -> [String: Any]? {
+            let list = items as? [[String: Any]] ?? []
+            return list.first { $0["is_active"] as? Bool == true } ?? list.first { $0["is_focused"] as? Bool == true }
+        }
+        let osWindow = active(try? JSONSerialization.jsonObject(with: listing))
+        return active(active(osWindow?["tabs"])?["windows"])?["id"] as? Int
+    }
+
+    nonisolated static func isSafeTTY(_ tty: String) -> Bool {
         tty.wholeMatch(of: /\/dev\/tty[a-z0-9]+/) != nil
     }
 
@@ -135,7 +189,7 @@ enum Terminals {
         case iTermScript
     }
 
-    static func openPlan(for bundleID: String, herdr: String) -> OpenPlan? {
+    nonisolated static func openPlan(for bundleID: String, herdr: String) -> OpenPlan? {
         switch bundleID {
         case ghostty, alacritty: .newInstance(arguments: ["-e", herdr])
         case kitty: .newInstance(arguments: [herdr])
@@ -184,6 +238,15 @@ enum Terminals {
 }
 
 enum Automation {
+    /// Whether Automation of an app is already allowed, without ever prompting.
+    static func granted(bundleID: String) async -> Bool {
+        await Task.detached {
+            let target = NSAppleEventDescriptor(bundleIdentifier: bundleID)
+            guard let descriptor = target.aeDesc else { return false }
+            return AEDeterminePermissionToAutomateTarget(descriptor, typeWildCard, typeWildCard, false) == noErr
+        }.value
+    }
+
     /// Asks macOS whether Herdrbar may send Apple Events to an app, prompting the user the first time.
     /// macOS stores the answer per app, so the bundle id is the target. The prompt blocks until
     /// answered, so this runs off the main thread.
