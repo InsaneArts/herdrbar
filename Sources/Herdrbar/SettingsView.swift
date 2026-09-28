@@ -119,7 +119,8 @@ struct SettingsView: View {
                 }
             }
             Section {
-                Text("Herdrbar \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "")")
+                Text(["Herdrbar", Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String]
+                    .compactMap(\.self).joined(separator: " "))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
