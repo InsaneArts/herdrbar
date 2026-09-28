@@ -1,0 +1,8 @@
+Herdrbar
+
+The menu bar glyph (Sources/Herdrbar/Resources/MenuBarIcon.pdf) is cropped from herdr's logo,
+https://github.com/herdrdev/herdr/blob/main/assets/logo.svg, which is distributed under the
+Apache License 2.0. Scripts/make_icons.py regenerates it from that file.
+
+The herdr name and logo belong to the herdr project. Herdrbar is an unofficial companion app and is
+not affiliated with herdr.

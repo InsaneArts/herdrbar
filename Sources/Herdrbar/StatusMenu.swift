@@ -44,11 +44,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
 
     private func updateButton() {
         guard let button = item.button else { return }
-        // Placeholder glyphs until the custom template image exists.
-        let symbol = model.herdrDown ? "circle.slash" : model.anyBlocked ? "circle.hexagongrid.fill" : "circle.hexagongrid"
-        let image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
-        image?.isTemplate = true
-        button.image = image
+        button.image = MenuBarGlyph.image(attention: model.anyBlocked, down: model.herdrDown)
         if model.attention > 0 {
             let font = NSFont.monospacedDigitSystemFont(ofSize: NSFont.menuBarFont(ofSize: 0).pointSize, weight: .regular)
             button.attributedTitle = NSAttributedString(string: " \(model.attention)", attributes: [.font: font])
@@ -166,4 +162,56 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     }()
 
     private static func image(for status: AgentStatus) -> NSImage? { images[status] }
+}
+
+/// herdr's ram, cropped from its logo (Scripts/make_menubar_icon.py), drawn as a template image.
+/// A blocked agent adds a badge dot; an unavailable herdr dims the ram and slashes it.
+@MainActor
+enum MenuBarGlyph {
+    static let ram: NSImage? = Bundle.main.url(forResource: "MenuBarIcon", withExtension: "pdf").flatMap(NSImage.init(contentsOf:))
+
+    private static var cache: [Int: NSImage] = [:]
+
+    static func image(attention: Bool, down: Bool, ram: NSImage? = MenuBarGlyph.ram) -> NSImage? {
+        guard let ram else {
+            // `swift run` has no app bundle, so no PDF.
+            let image = NSImage(systemSymbolName: down ? "circle.slash" : attention ? "circle.hexagongrid.fill" : "circle.hexagongrid",
+                                accessibilityDescription: nil)
+            image?.isTemplate = true
+            return image
+        }
+        let key = (attention ? 1 : 0) + (down ? 2 : 0)
+        if ram === MenuBarGlyph.ram, let cached = cache[key] { return cached }
+        let image = NSImage(size: ram.size, flipped: false) { rect in
+            ram.draw(in: rect, from: .zero, operation: .sourceOver, fraction: down ? 0.45 : 1)
+            let context = NSGraphicsContext.current
+            if attention && !down {
+                // Bottom right sits on the ram's chest; the horn at the top stays readable.
+                let dot = NSRect(x: rect.maxX - 5.5, y: rect.minY, width: 5.5, height: 5.5)
+                context?.compositingOperation = .clear
+                NSBezierPath(ovalIn: dot.insetBy(dx: -1.3, dy: -1.3)).fill()
+                context?.compositingOperation = .sourceOver
+                NSColor.black.setFill()
+                NSBezierPath(ovalIn: dot).fill()
+            }
+            if down {
+                let slash = NSBezierPath()
+                slash.move(to: NSPoint(x: rect.minX + 1.5, y: rect.maxY - 1.5))
+                slash.line(to: NSPoint(x: rect.maxX - 1.5, y: rect.minY + 1.5))
+                slash.lineCapStyle = .round
+                context?.compositingOperation = .clear
+                slash.lineWidth = 4.5
+                slash.stroke()
+                context?.compositingOperation = .sourceOver
+                NSColor.black.setStroke()
+                slash.lineWidth = 1.5
+                slash.stroke()
+            }
+            return true
+        }
+        image.isTemplate = true
+        image.accessibilityDescription = "Herdrbar"
+        if ram === MenuBarGlyph.ram { cache[key] = image }
+        return image
+    }
 }
