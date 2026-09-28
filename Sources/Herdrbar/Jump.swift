@@ -32,7 +32,7 @@ final class Jump {
         jumpLog.notice("herdr clients: \(clients.map { "\($0.pid)@\($0.hostBundleID ?? "-")" }.joined(separator: ", "), privacy: .public)")
         guard !clients.isEmpty else {
             if let herdr = install.binary {
-                Terminals.openHerdr(herdr: herdr, preferred: UserDefaults.standard.string(forKey: "LastHerdrTerminal"))
+                await Terminals.openHerdr(herdr: herdr, preferred: UserDefaults.standard.string(forKey: "LastHerdrTerminal"))
             }
             return
         }

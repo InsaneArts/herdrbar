@@ -12,19 +12,25 @@ enum Terminals {
     static let ghostty = "com.mitchellh.ghostty"
     static let iTerm = "com.googlecode.iterm2"
     static let terminal = "com.apple.Terminal"
+    static let kitty = "net.kovidgoyal.kitty"
+    static let alacritty = "org.alacritty"
 
     /// Raises the exact window when the terminal supports it, otherwise the app.
     static func raise(_ client: HerdrClient, socket: String) async {
         guard let pid = client.hostPID, let app = NSRunningApplication(processIdentifier: pid) else { return }
         NSApp.yieldActivation(to: app)
+        // Alacritty and other terminals have no way to focus one window: activating the exact process that
+        // hosts herdr is precise when each window is its own process.
         let exact: Bool = switch client.hostBundleID {
         case ghostty: await focusGhostty(pid: pid, socket: socket)
+        case iTerm: await focusITerm(pid: pid, tty: client.tty)
+        case terminal: await focusTerminal(pid: pid, tty: client.tty)
+        case kitty: await focusKitty(client, app: app)
         default: false
         }
-        if !exact {
-            let activated = app.activate(from: .current, options: [])
-            jumpLog.notice("app activation of \(client.hostBundleID ?? "?", privacy: .public) pid \(pid): \(activated)")
-        }
+        // Selecting a window inside a terminal does not bring the terminal forward; activating its process does.
+        let activated = app.activate(from: .current, options: [])
+        jumpLog.notice("\(client.hostBundleID ?? "?", privacy: .public) pid \(pid): exact \(exact), activated \(activated)")
     }
 
     /// Ghostty exposes no tty or pid per terminal, so herdr briefly titles its window with a nonce and
@@ -53,32 +59,116 @@ enum Terminals {
         }
         _ = try? await Herdr.call("client.window_title.clear", socket: socket)
         jumpLog.notice("ghostty terminal found: \(found) after \(ContinuousClock.now - started, privacy: .public)")
-        if found {
-            let activated = NSRunningApplication(processIdentifier: pid)?.activate(from: .current, options: []) ?? false
-            jumpLog.notice("ghostty activation: \(activated)")
-        }
         return found
     }
 
-    /// Opens a terminal running herdr, which attaches to the running session. Launch Services needs no
-    /// Automation permission.
-    static func openHerdr(herdr: String, preferred: String?) {
-        let candidates = [preferred, ghostty, terminal].compactMap(\.self)
-        for bundleID in candidates {
-            guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else { continue }
-            switch bundleID {
-            case ghostty:
+    /// iTerm2 and Terminal.app expose each session's tty, which matches the herdr client's exactly.
+    static func focusITerm(pid: pid_t, tty: String?) async -> Bool {
+        guard let tty, isSafeTTY(tty), await Automation.allowed(bundleID: iTerm),
+              let app = SBApplication(processIdentifier: pid) else { return false }
+        app.timeout = 120
+        for window in elements(app, "windows") {
+            for tab in elements(window, "tabs") {
+                for session in elements(tab, "sessions") where session.value(forKey: "tty") as? String == tty {
+                    for object in [window, tab, session] { object.perform(Selector(("select"))) }
+                    jumpLog.notice("iterm session found for \(tty, privacy: .public)")
+                    return true
+                }
+            }
+        }
+        return false
+    }
+
+    static func focusTerminal(pid: pid_t, tty: String?) async -> Bool {
+        guard let tty, isSafeTTY(tty), await Automation.allowed(bundleID: terminal),
+              let app = SBApplication(processIdentifier: pid) else { return false }
+        app.timeout = 120
+        for window in elements(app, "windows") {
+            for tab in elements(window, "tabs") where tab.value(forKey: "tty") as? String == tty {
+                if window.value(forKey: "miniaturized") as? Bool == true { window.setValue(false, forKey: "miniaturized") }
+                tab.setValue(true, forKey: "selected")
+                window.setValue(1, forKey: "index")
+                jumpLog.notice("terminal tab found for \(tty, privacy: .public)")
+                return true
+            }
+        }
+        return false
+    }
+
+    /// kitty focuses one window through its remote control, when the user turned it on (`listen_on`).
+    static func focusKitty(_ client: HerdrClient, app: NSRunningApplication) async -> Bool {
+        guard let bundle = app.bundleURL, let command = kittyCommand(environment: client.environment, kittyApp: bundle) else {
+            return false
+        }
+        do {
+            _ = try await CLI.run(command, timeout: .seconds(3))
+            return true
+        } catch {
+            jumpLog.notice("kitty remote control failed: \(String(describing: error), privacy: .public)")
+            return false
+        }
+    }
+
+    /// `kitten @ focus-window`, built from the client's own environment. nil without remote control.
+    static func kittyCommand(environment: [String: String], kittyApp: URL) -> [String]? {
+        guard let address = environment["KITTY_LISTEN_ON"], address.hasPrefix("unix:") || address.hasPrefix("tcp:"),
+              let window = environment["KITTY_WINDOW_ID"], let id = Int(window), id > 0 else { return nil }
+        return [kittyApp.appending(path: "Contents/MacOS/kitten").path, "@", "--to", address,
+                "focus-window", "--match", "id:\(id)"]
+    }
+
+    static func isSafeTTY(_ tty: String) -> Bool {
+        tty.wholeMatch(of: /\/dev\/tty[a-z0-9]+/) != nil
+    }
+
+    private static func elements(_ object: SBObject, _ key: String) -> [SBObject] {
+        (object.value(forKey: key) as? SBElementArray)?.compactMap { $0 as? SBObject } ?? []
+    }
+
+    /// How to start a terminal running herdr.
+    enum OpenPlan: Equatable {
+        /// A new instance of the app with these arguments, through Launch Services: no Automation needed.
+        case newInstance(arguments: [String])
+        /// A `.command` file that the app runs: no Automation needed.
+        case commandFile
+        /// iTerm2's `create window with default profile command`.
+        case iTermScript
+    }
+
+    static func openPlan(for bundleID: String, herdr: String) -> OpenPlan? {
+        switch bundleID {
+        case ghostty, alacritty: .newInstance(arguments: ["-e", herdr])
+        case kitty: .newInstance(arguments: [herdr])
+        case terminal: .commandFile
+        case iTerm: .iTermScript
+        default: nil
+        }
+    }
+
+    /// Opens a terminal running herdr, which attaches to the running session: the terminal herdr last ran
+    /// in, else the first installed of Ghostty, iTerm2, and Terminal.
+    static func openHerdr(herdr: String, preferred: String?) async {
+        for bundleID in [preferred, ghostty, iTerm, terminal].compactMap(\.self) {
+            guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID),
+                  let plan = openPlan(for: bundleID, herdr: herdr) else { continue }
+            switch plan {
+            case .newInstance(let arguments):
                 let configuration = NSWorkspace.OpenConfiguration()
-                configuration.arguments = ["-e", herdr]
+                configuration.arguments = arguments
                 configuration.createsNewApplicationInstance = true
-                NSWorkspace.shared.openApplication(at: url, configuration: configuration)
+                _ = try? await NSWorkspace.shared.openApplication(at: url, configuration: configuration)
                 return
-            case terminal:
+            case .commandFile:
                 guard let script = commandFile(running: herdr) else { continue }
-                NSWorkspace.shared.open([script], withApplicationAt: url, configuration: NSWorkspace.OpenConfiguration())
+                _ = try? await NSWorkspace.shared.open([script], withApplicationAt: url, configuration: NSWorkspace.OpenConfiguration())
                 return
-            default:
-                continue
+            case .iTermScript:
+                guard await Automation.allowed(bundleID: iTerm),
+                      let running = try? await NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration()),
+                      let app = SBApplication(processIdentifier: running.processIdentifier) else { continue }
+                app.timeout = 120
+                app.perform(Selector(("createWindowWithDefaultProfileCommand:")), with: herdr)
+                return
             }
         }
     }
