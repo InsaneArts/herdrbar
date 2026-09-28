@@ -20,5 +20,11 @@ struct LiveMenuTests {
         print(lines.joined(separator: "\n"))
         #expect(model.attention == snapshot.agents.filter(\.status.needsYou).count)
     }
+
+    @MainActor @Test func printsTheHerdrClientsAndTheirTerminals() {
+        for client in ClientLocator.localClients() {
+            print("client pid \(client.pid) tty \(client.tty ?? "-") host \(client.hostBundleID ?? "-") pid \(client.hostPID.map(String.init) ?? "-")")
+        }
+    }
 }
 
