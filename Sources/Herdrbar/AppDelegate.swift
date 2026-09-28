@@ -29,6 +29,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         herdrIsFrontmost: { Self.herdrIsFrontmost() },
         notifyDone: { [weak self] in self?.settings.notifyDone ?? true }))
     private var lastHotkeyJump: AgentKey?
+    private let peek = PeekPanel()
+    private var screens: [AgentKey: (lines: [String], at: Date)] = [:]
+    private var highlighted: AgentKey?
     private var tasks: [Task<Void, Never>] = []
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -45,6 +48,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             Task { await self.jump.raiseHerdr(install: self.install) }
         }
         menu.onSettings = { [weak self] in self?.showSettings() }
+        menu.onHighlight = { [weak self] row in self?.highlight(row) }
         hotkeys.onPress = { [weak self] action in self?.hotkeyPressed(action) }
         let publish: @Sendable (Result<Snapshot, any Error>) async -> Void = { [weak self] result in
             await self?.apply(result, machine: Fleet.local)
@@ -100,6 +104,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             lastHotkeyJump = key
             jump(to: key)
         }
+    }
+
+    /// Peek: shows the highlighted agent's last screen lines beside the menu. Read on demand and kept
+    /// for a few seconds; never written to notifications, because agent output can contain secrets.
+    private func highlight(_ row: AgentRow?) {
+        highlighted = row?.key
+        guard let row, row.key.machine == Fleet.local, let agent = fleet.agent(row.key),
+              let place = menu.openMenuFrame else { return peek.hide() }
+        let cached = screens[row.key].flatMap { Date.now.timeIntervalSince($0.at) < 3 ? $0.lines : nil }
+        peek.show(row, lines: cached, beside: place.frame, on: place.screen)
+        guard cached == nil else { return }
+        let socket = install.socketPath, pane = agent.paneID
+        Task {
+            let lines = await Self.readScreen(pane: pane, socket: socket)
+            screens[row.key] = (lines, .now)
+            guard highlighted == row.key, let place = menu.openMenuFrame else { return }
+            peek.show(row, lines: lines, beside: place.frame, on: place.screen)
+        }
+    }
+
+    private static func readScreen(pane: String, socket: String) async -> [String] {
+        struct Params: Encodable, Sendable {
+            var target: String
+            var source = "detection"
+        }
+        guard isSafeID(pane), let line = try? await Herdr.call("agent.read", Params(target: pane), socket: socket),
+              let result = try? decodeReply(line, as: AgentReadResult.self) else { return ["Can't read this agent's screen."] }
+        return Peek.lines(from: result.read.text)
     }
 
     private func showSettings() {

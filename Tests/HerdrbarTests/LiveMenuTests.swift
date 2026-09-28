@@ -26,5 +26,16 @@ struct LiveMenuTests {
             print("client pid \(client.pid) tty \(client.tty ?? "-") host \(client.hostBundleID ?? "-") pid \(client.hostPID.map(String.init) ?? "-")")
         }
     }
+
+    @Test func printsPeekForTheWaitingAgents() async throws {
+        struct Params: Encodable, Sendable { var target: String; var source = "detection" }
+        let socket = HerdrInstall.locate().socketPath
+        let snapshot = try await Herdr.snapshot(socket: socket)
+        for agent in snapshot.agents where agent.status.needsYou {
+            let line = try await Herdr.call("agent.read", Params(target: agent.paneID), socket: socket)
+            let lines = Peek.lines(from: try decodeReply(line, as: AgentReadResult.self).read.text)
+            print("=== peek \(agent.paneID) (\(lines.count) lines)\n" + lines.joined(separator: "\n"))
+        }
+    }
 }
 

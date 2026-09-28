@@ -9,6 +9,8 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     var onSettings: (() -> Void)?
     var onWillOpen: (() -> Void)?
     var onDidClose: (() -> Void)?
+    /// The agent row under the pointer or the keyboard highlight, or nil when there is none.
+    var onHighlight: ((AgentRow?) -> Void)?
 
     private let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private let menu = NSMenu()
@@ -39,8 +41,23 @@ final class StatusMenu: NSObject, NSMenuDelegate {
 
     func menuDidClose(_ menu: NSMenu) {
         isOpen = false
+        onHighlight?(nil)
         rebuild()
         onDidClose?()
+    }
+
+    func menu(_ menu: NSMenu, willHighlight item: NSMenuItem?) {
+        let key = item?.representedObject as? AgentKey
+        onHighlight?((model.needsYou + model.working + model.idle).first { $0.key == key })
+    }
+
+    /// Where the open menu sits on screen. The menu drops down from the icon, so its frame follows from
+    /// the icon's window and the menu's size.
+    var openMenuFrame: (frame: NSRect, screen: NSScreen)? {
+        guard let window = item.button?.window, let screen = window.screen else { return nil }
+        let size = menu.size
+        let x = min(window.frame.minX, screen.visibleFrame.maxX - size.width)
+        return (NSRect(x: x, y: window.frame.minY - size.height, width: size.width, height: size.height), screen)
     }
 
     /// Opens the menu as if its icon was clicked (the hotkey, and first launch).
