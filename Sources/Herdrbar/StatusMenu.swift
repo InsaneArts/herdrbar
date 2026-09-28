@@ -6,11 +6,13 @@ import AppKit
 final class StatusMenu: NSObject, NSMenuDelegate {
     var onSelect: ((AgentKey) -> Void)?
     var onOpenHerdr: (() -> Void)?
+    var onSettings: (() -> Void)?
     var onWillOpen: (() -> Void)?
+    var onDidClose: (() -> Void)?
 
     private let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private let menu = NSMenu()
-    private var model = MenuModel()
+    private(set) var model = MenuModel()
     private var isOpen = false
     private var rowItems: [AgentKey: NSMenuItem] = [:]
 
@@ -38,6 +40,12 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     func menuDidClose(_ menu: NSMenu) {
         isOpen = false
         rebuild()
+        onDidClose?()
+    }
+
+    /// Opens the menu as if its icon was clicked (the hotkey, and first launch).
+    func open() {
+        item.button?.performClick(nil)
     }
 
     // MARK: Menu bar button
@@ -83,8 +91,11 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         default: menu.addItem(actionItem("Open Herdr", #selector(openHerdr), key: "o"))
         }
         menu.addItem(.separator())
+        menu.addItem(actionItem("Settings…", #selector(openSettings), key: ","))
         menu.addItem(NSMenuItem(title: "Quit Herdrbar", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
     }
+
+    @objc private func openSettings() { onSettings?() }
 
     private func actionItem(_ title: String, _ action: Selector, key: String = "") -> NSMenuItem {
         let item = NSMenuItem(title: title, action: action, keyEquivalent: key)

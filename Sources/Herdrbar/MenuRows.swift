@@ -195,6 +195,15 @@ enum MenuRows {
         return parts.joined(separator: " · ")
     }
 
+    /// Where the "next agent that needs you" hotkey goes: the top of Needs You, or the agent after the one
+    /// it went to last, wrapping around.
+    static func nextWaiting(in model: MenuModel, after last: AgentKey?) -> AgentKey? {
+        let keys = model.needsYou.map(\.key)
+        guard let first = keys.first else { return nil }
+        guard let last, let index = keys.firstIndex(of: last) else { return first }
+        return keys[(index + 1) % keys.count]
+    }
+
     // MARK: Ordering
 
     /// Blocked before done. Oldest first: agents that were already waiting when Herdrbar started come

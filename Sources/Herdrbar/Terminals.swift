@@ -104,6 +104,7 @@ enum Automation {
             return AEDeterminePermissionToAutomateTarget(descriptor, typeWildCard, typeWildCard, true)
         }.value
         jumpLog.notice("automation permission for \(bundleID, privacy: .public): \(status)")
+        UserDefaults.standard.set(status == OSStatus(errAEEventNotPermitted), forKey: "AutomationDenied")
         return status == noErr
     }
 }

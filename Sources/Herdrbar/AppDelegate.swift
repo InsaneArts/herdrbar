@@ -1,4 +1,5 @@
 import AppKit
+import ServiceManagement
 import UserNotifications
 
 @MainActor
@@ -8,6 +9,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private var install = HerdrInstall.locate()
     private var source: LocalSource?
     private let jump = Jump()
+    private let hotkeys = Hotkeys()
+    private lazy var settings = SettingsModel(hotkeys: hotkeys)
+    private let settingsWindow = SettingsWindow()
     private lazy var notifier = Notifier(.init(
         post: { notice in
             let content = UNMutableNotificationContent()
@@ -23,7 +27,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         },
         currentAgent: { [weak self] key in self?.fleet.agent(key) },
         herdrIsFrontmost: { Self.herdrIsFrontmost() },
-        notifyDone: { UserDefaults.standard.object(forKey: "NotifyDone") as? Bool ?? true }))
+        notifyDone: { [weak self] in self?.settings.notifyDone ?? true }))
+    private var lastHotkeyJump: AgentKey?
     private var tasks: [Task<Void, Never>] = []
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -39,6 +44,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             guard let self else { return }
             Task { await self.jump.raiseHerdr(install: self.install) }
         }
+        menu.onSettings = { [weak self] in self?.showSettings() }
+        hotkeys.onPress = { [weak self] action in self?.hotkeyPressed(action) }
         let publish: @Sendable (Result<Snapshot, any Error>) async -> Void = { [weak self] result in
             await self?.apply(result, machine: Fleet.local)
         }
@@ -51,7 +58,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             }
         })
         render()
-        Task { _ = try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) }
+        welcome()
+    }
+
+    /// Opening the app again from Finder or Spotlight shows Settings: the way back when the notch hides the icon.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        showSettings()
+        return false
     }
 
     private func apply(_ result: Result<Snapshot, any Error>, machine: String) {
@@ -73,6 +86,45 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         Task {
             await jump.to(agent, install: install)
             source?.refresh()
+        }
+    }
+
+    private func hotkeyPressed(_ action: HotkeyAction) {
+        switch action {
+        case .openMenu:
+            menu.open()
+        case .nextWaiting:
+            // With herdr unavailable, the menu says why.
+            if menu.model.herdrDown { return menu.open() }
+            guard let key = MenuRows.nextWaiting(in: menu.model, after: lastHotkeyJump) else { return NSSound.beep() }
+            lastHotkeyJump = key
+            jump(to: key)
+        }
+    }
+
+    private func showSettings() {
+        settingsWindow.show(settings)
+    }
+
+    /// First launch: the menu opens once so you see where Herdrbar lives; macOS asks about notifications
+    /// after it closes. An installed copy also turns on Open at Login; a development build does not.
+    private func welcome() {
+        let center = UNUserNotificationCenter.current()
+        guard !UserDefaults.standard.bool(forKey: "LaunchedBefore") else {
+            Task { _ = try? await center.requestAuthorization(options: [.alert, .sound]) }
+            return
+        }
+        UserDefaults.standard.set(true, forKey: "LaunchedBefore")
+        if Bundle.main.bundleURL.deletingLastPathComponent().lastPathComponent == "Applications" {
+            try? SMAppService.mainApp.register()
+        }
+        menu.onDidClose = { [weak self] in
+            self?.menu.onDidClose = nil
+            Task { _ = try? await center.requestAuthorization(options: [.alert, .sound]) }
+        }
+        Task {
+            try? await Task.sleep(for: .milliseconds(600))
+            menu.open()
         }
     }
 
