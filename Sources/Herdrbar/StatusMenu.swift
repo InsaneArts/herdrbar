@@ -7,6 +7,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     var onSelect: ((AgentKey) -> Void)?
     var onOpenHerdr: (() -> Void)?
     var onSettings: (() -> Void)?
+    var onTogglePause: (() -> Void)?
     var onWillOpen: (() -> Void)?
     var onDidClose: (() -> Void)?
     /// The agent row under the pointer or the keyboard highlight, or nil when there is none.
@@ -107,12 +108,21 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         case .notRunning?: menu.addItem(actionItem("Start Herdr", #selector(openHerdr), key: "o"))
         default: menu.addItem(actionItem("Open Herdr", #selector(openHerdr), key: "o"))
         }
+        if let until = model.pausedUntil {
+            let resume = actionItem("Resume Notifications", #selector(togglePause))
+            resume.subtitle = "Paused until \(until.formatted(date: .omitted, time: .shortened))"
+            menu.addItem(resume)
+        } else {
+            menu.addItem(actionItem("Pause Notifications for 1 Hour", #selector(togglePause)))
+        }
         menu.addItem(.separator())
         menu.addItem(actionItem("Settings…", #selector(openSettings), key: ","))
         menu.addItem(NSMenuItem(title: "Quit Herdrbar", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
     }
 
     @objc private func openSettings() { onSettings?() }
+
+    @objc private func togglePause() { onTogglePause?() }
 
     private func actionItem(_ title: String, _ action: Selector, key: String = "") -> NSMenuItem {
         let item = NSMenuItem(title: title, action: action, keyEquivalent: key)

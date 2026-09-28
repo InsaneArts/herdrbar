@@ -42,6 +42,8 @@ struct MenuModel: Equatable, Sendable {
     /// herdr can't be used: the menu bar icon shows its unavailable variant.
     var herdrDown = false
     var tooltip = ""
+    /// Set while notifications are paused from the menu.
+    var pausedUntil: Date?
 }
 
 enum MenuRows {

@@ -8,7 +8,8 @@ struct AgentNotice: Equatable, Sendable {
     var body: String
     var playsSound: Bool
 
-    init(agent: Agent) {
+    /// `reminder` is the one follow-up for an agent that has been waiting a long time.
+    init(agent: Agent, reminder: Bool = false) {
         key = agent.key
         identifier = Self.identifier(agent.key)
         let name = MenuRows.agentName(agent)
@@ -18,10 +19,11 @@ struct AgentNotice: Equatable, Sendable {
         if task == name {
             // No usable task title: say who and where instead.
             title = "\(name) in \(place)"
-            body = blocked ? "Needs you." : "Finished."
+            body = reminder ? "Still waiting." : blocked ? "Needs you." : "Finished."
         } else {
             title = task
-            body = blocked ? "\(name) needs you in \(place)." : "\(name) finished in \(place)."
+            body = reminder ? "\(name) is still waiting in \(place)."
+                : blocked ? "\(name) needs you in \(place)." : "\(name) finished in \(place)."
         }
         playsSound = blocked
     }
@@ -41,20 +43,31 @@ final class Notifier {
         /// True while herdr's window is in front: herdr's own UI shows the change.
         var herdrIsFrontmost: () async -> Bool
         var notifyDone: () -> Bool
+        /// True while the user paused notifications from the menu.
+        var paused: () -> Bool = { false }
         /// herdr waits a second before its own alerts; a state that flickers never notifies.
         var confirmDelay: Duration = .seconds(1)
     }
 
+    /// An agent blocked this long gets one reminder.
+    static let reminderDelay: TimeInterval = 15 * 60
+
     private let environment: Environment
     private var pending: [AgentKey: Task<Void, Never>] = [:]
+    private var reminded: Set<AgentKey> = []
 
     init(_ environment: Environment) {
         self.environment = environment
     }
 
     func handle(_ transitions: Transitions) {
-        for key in transitions.resolved { withdraw(key) }
-        for agent in transitions.needsYou where agent.status == .blocked || environment.notifyDone() {
+        for key in transitions.resolved {
+            reminded.remove(key)
+            withdraw(key)
+        }
+        for agent in transitions.needsYou {
+            reminded.remove(agent.key)
+            guard agent.status == .blocked || environment.notifyDone() else { continue }
             let key = agent.key, status = agent.status
             pending[key]?.cancel()
             pending[key] = Task { [weak self] in
@@ -63,9 +76,21 @@ final class Notifier {
                 guard !Task.isCancelled else { return }
                 pending[key] = nil
                 guard let current = environment.currentAgent(key), current.status == status,
-                      await !environment.herdrIsFrontmost() else { return }
+                      !environment.paused(), await !environment.herdrIsFrontmost() else { return }
                 environment.post(AgentNotice(agent: current))
             }
+        }
+    }
+
+    /// Reminds once about each agent that has been blocked for `reminderDelay`: the first banner may have
+    /// been dismissed and forgotten. Only waits Herdrbar saw begin count; a wait that started before
+    /// launch has no known length.
+    func remind(_ agents: [Agent], now: Date) async {
+        for agent in agents where agent.status == .blocked && !reminded.contains(agent.key) {
+            guard let since = agent.since, now.timeIntervalSince(since) >= Self.reminderDelay else { continue }
+            reminded.insert(agent.key)
+            guard !environment.paused(), await !environment.herdrIsFrontmost() else { continue }
+            environment.post(AgentNotice(agent: agent, reminder: true))
         }
     }
 

@@ -27,7 +27,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         },
         currentAgent: { [weak self] key in self?.fleet.agent(key) },
         herdrIsFrontmost: { await Terminals.herdrWindowIsFront(ClientLocator.localClients()) },
-        notifyDone: { [weak self] in self?.settings.notifyDone ?? true }))
+        notifyDone: { [weak self] in self?.settings.notifyDone ?? true },
+        paused: { Self.pausedUntil != nil }))
     private var lastHotkeyJump: AgentKey?
     private let peek = PeekPanel()
     private var screens: [AgentKey: (lines: [String], at: Date)] = [:]
@@ -48,6 +49,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             Task { await self.jump.raiseHerdr(install: self.install) }
         }
         menu.onSettings = { [weak self] in self?.showSettings() }
+        menu.onTogglePause = { [weak self] in self?.togglePause() }
         menu.onHighlight = { [weak self] row in self?.highlight(row) }
         hotkeys.onPress = { [weak self] action in self?.hotkeyPressed(action) }
         let publish: @Sendable (Result<Snapshot, any Error>) async -> Void = { [weak self] result in
@@ -59,6 +61,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(30))
                 self?.render()
+                await self?.remindAboutLongWaits()
             }
         })
         render()
@@ -81,7 +84,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         let localMachine = fleet.machines[Fleet.local]
         if localMachine?.firstFailure != nil { install = HerdrInstall.locate() }
         let local = MenuRows.localState(machine: localMachine, herdrInstalled: install.isInstalled, now: .now)
-        menu.update(MenuRows.model(fleet: fleet, local: local, now: .now))
+        var model = MenuRows.model(fleet: fleet, local: local, now: .now)
+        model.pausedUntil = Self.pausedUntil
+        menu.update(model)
+    }
+
+    private func remindAboutLongWaits() async {
+        await notifier.remind(fleet.agents, now: .now)
+    }
+
+    /// Pausing silences notifications for an hour; the menu shows when they resume.
+    static var pausedUntil: Date? {
+        (UserDefaults.standard.object(forKey: "NotificationsPausedUntil") as? Date).flatMap { $0 > .now ? $0 : nil }
+    }
+
+    private func togglePause() {
+        if Self.pausedUntil == nil {
+            UserDefaults.standard.set(Date.now.addingTimeInterval(3600), forKey: "NotificationsPausedUntil")
+        } else {
+            UserDefaults.standard.removeObject(forKey: "NotificationsPausedUntil")
+        }
+        render()
     }
 
     private func jump(to key: AgentKey) {

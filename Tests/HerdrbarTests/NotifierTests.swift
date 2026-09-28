@@ -28,6 +28,11 @@ import Testing
             == "Claude needs you in api on omarchy.")
     }
 
+    @Test func aReminderSaysItIsStillWaiting() {
+        #expect(AgentNotice(agent: agent(.blocked, title: "Review PR 12"), reminder: true).body == "Codex is still waiting in api.")
+        #expect(AgentNotice(agent: agent(.blocked, title: nil), reminder: true).body == "Still waiting.")
+    }
+
     @Test func withoutATaskTitleItSaysWhoAndWhere() {
         let blocked = AgentNotice(agent: agent(.blocked, title: nil))
         #expect(blocked.title == "Codex in api")
@@ -43,18 +48,19 @@ import Testing
         var agents: [AgentKey: Agent] = [:]
         var herdrInFront = false
         var notifyDone = true
+        var paused = false
     }
 
     private func make(_ spy: Spy) -> Notifier {
         Notifier(.init(post: { spy.posted.append($0) }, remove: { spy.removed += $0 },
                        currentAgent: { spy.agents[$0] }, herdrIsFrontmost: { spy.herdrInFront },
-                       notifyDone: { spy.notifyDone }, confirmDelay: .milliseconds(30)))
+                       notifyDone: { spy.notifyDone }, paused: { spy.paused }, confirmDelay: .milliseconds(30)))
     }
 
-    private func agent(_ id: String, _ status: AgentStatus) -> Agent {
+    private func agent(_ id: String, _ status: AgentStatus, since: Date? = nil) -> Agent {
         Agent(key: AgentKey(machine: Fleet.local, terminalID: id), paneID: "w1:\(id)", status: status, kind: "claude",
               displayAgent: nil, name: nil, metadataTitle: nil, terminalTitle: "Task \(id)", cwd: nil,
-              workspaceLabel: "api", workspaceNumber: 1, tabNumber: 1, stateChangeSeq: 0, since: nil)
+              workspaceLabel: "api", workspaceNumber: 1, tabNumber: 1, stateChangeSeq: 0, since: since)
     }
 
     private func settle() async throws { try await Task.sleep(for: .milliseconds(120)) }
@@ -113,5 +119,33 @@ import Testing
         #expect(spy.removed == ["local/a"])
         notifier.withdraw(blocked.key)
         #expect(spy.removed == ["local/a", "local/a"])
+    }
+
+    @Test func pausedNotificationsStayQuiet() async throws {
+        let spy = Spy(), notifier = make(spy), blocked = agent("a", .blocked)
+        spy.agents[blocked.key] = blocked
+        spy.paused = true
+        notifier.handle(Transitions(needsYou: [blocked]))
+        try await settle()
+        #expect(spy.posted.isEmpty)
+    }
+
+    @Test func remindsOnceAfterAQuarterHour() async {
+        let spy = Spy(), notifier = make(spy), now = Date.now
+        let waiting = agent("a", .blocked, since: now.addingTimeInterval(-Notifier.reminderDelay - 1))
+        let fresh = agent("b", .blocked, since: now.addingTimeInterval(-60))
+        let unknown = agent("c", .blocked)  // blocked before Herdrbar started: length unknown
+        await notifier.remind([waiting, fresh, unknown], now: now)
+        #expect(spy.posted.map(\.body) == ["Claude is still waiting in api."])
+        await notifier.remind([waiting], now: now.addingTimeInterval(600))
+        #expect(spy.posted.count == 1)  // only once
+
+        notifier.withdraw(waiting.key)  // you went to it: still no second reminder
+        await notifier.remind([waiting], now: now.addingTimeInterval(1200))
+        #expect(spy.posted.count == 1)
+
+        notifier.handle(Transitions(resolved: [waiting.key]))  // answered; a new wait may remind again
+        await notifier.remind([waiting], now: now.addingTimeInterval(1800))
+        #expect(spy.posted.count == 2)
     }
 }
