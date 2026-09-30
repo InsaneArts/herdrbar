@@ -1,6 +1,6 @@
 cask "herdrbar" do
   version "0.1.0"
-  sha256 "bf0f690b51b5d969fb33f3113655b8fe0080900b81f3b75950a2116ec5313bc4"
+  sha256 "e1df85ec7999e0b071af3bd31958ab1bbd8793856967b784e7649466607dd80d"
 
   url "https://github.com/InsaneArts/herdrbar/releases/download/v#{version}/Herdrbar-#{version}.zip"
   name "Herdrbar"
