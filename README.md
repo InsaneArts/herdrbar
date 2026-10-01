@@ -51,7 +51,7 @@ machines.
 In Terminal:
 
 ```sh
-curl -fsSL https://herdrbar.insanearts.io/install.sh | sh
+curl -fsSL https://insanearts.github.io/herdrbar/install.sh | sh
 ```
 
 The script installs the latest release in `/Applications`. First it checks the download's checksum and that Apple

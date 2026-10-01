@@ -1,7 +1,7 @@
 #!/bin/sh
 # Installs the latest Herdrbar from GitHub Releases:
 #
-#   curl -fsSL https://herdrbar.insanearts.io/install.sh | sh
+#   curl -fsSL https://insanearts.github.io/herdrbar/install.sh | sh
 #
 # Before it replaces Herdrbar.app, it checks the download's SHA-256, that Apple notarized the app, and that
 # Herdrbar's team signed it. The app goes to /Applications, or to ~/Applications when /Applications isn't

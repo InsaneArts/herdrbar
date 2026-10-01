@@ -1,6 +1,6 @@
 name: Pages
 
-# Publishes site/ (the landing page and install.sh) to GitHub Pages: https://herdrbar.insanearts.io
+# Publishes site/ (the landing page and install.sh) to GitHub Pages: https://insanearts.github.io/herdrbar
 on:
   push:
     branches: [main]
