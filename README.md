@@ -48,6 +48,15 @@ machines.
 
 ## Install
 
+In Terminal:
+
+```sh
+curl -fsSL https://herdrbar.insanearts.io/install.sh | sh
+```
+
+The script installs the latest release in `/Applications`. First it checks the download's checksum and that Apple
+notarized it.
+
 With Homebrew:
 
 ```sh
@@ -55,8 +64,8 @@ brew tap insanearts/herdrbar https://github.com/InsaneArts/herdrbar
 brew install --cask insanearts/herdrbar/herdrbar
 ```
 
-Or download the zip from the [latest release](https://github.com/InsaneArts/herdrbar/releases/latest). The app is
-signed and notarized for macOS 15+, on Apple Silicon and Intel.
+Or download the disk image from the [latest release](https://github.com/InsaneArts/herdrbar/releases/latest) and drag
+Herdrbar to Applications. The app is signed and notarized for macOS 15+, on Apple Silicon and Intel.
 
 Requirements:
 
