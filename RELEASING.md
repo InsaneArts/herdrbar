@@ -14,13 +14,14 @@ The script runs the tests, builds for Apple silicon and Intel, signs with the ha
 staples, and checks the app with Gatekeeper. `release/VERSION/` then holds:
 
 - `Herdrbar-VERSION.zip`: the notarized app.
+- `Herdrbar-VERSION.dmg`: the same app on a notarized disk image, beside a link to Applications.
 - `herdrbar.rb`: the Homebrew cask, with the zip's SHA-256.
-- `SHA256SUMS`: checksums for both.
+- `SHA256SUMS`: checksums for all three.
 
 ## Publish
 
 ```sh
-gh release create v0.1.0 release/0.1.0/Herdrbar-0.1.0.zip release/0.1.0/SHA256SUMS \
+gh release create v0.1.0 release/0.1.0/Herdrbar-0.1.0.{zip,dmg} release/0.1.0/SHA256SUMS \
   --repo InsaneArts/herdrbar --title "Herdrbar 0.1.0" --notes-file NOTES.md
 cp release/0.1.0/herdrbar.rb Casks/herdrbar.rb
 git commit -am "Herdrbar 0.1.0 cask" && git push

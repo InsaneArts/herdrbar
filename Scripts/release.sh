@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Builds a signed, notarized, stapled Herdrbar for Apple silicon and Intel from a clean checkout, then zips
-# it, writes its checksum, and fills in the Homebrew cask. It publishes nothing; see RELEASING.md.
+# it, packs a disk image, writes checksums, and fills in the Homebrew cask. It publishes nothing; see
+# RELEASING.md.
 #
 #   Scripts/release.sh            # version and build number come from version.env
 set -euo pipefail
@@ -42,7 +43,8 @@ spctl --assess --type execute --verbose=2 Herdrbar.app
 echo "==> package"
 ZIP="$OUT/Herdrbar-$MARKETING_VERSION.zip"
 ditto --norsrc -c -k --keepParent Herdrbar.app "$ZIP"
+Scripts/make_dmg.sh Herdrbar.app "$OUT/Herdrbar-$MARKETING_VERSION.dmg"
 Scripts/generate-cask.sh "$MARKETING_VERSION" "$ZIP" "$OUT/herdrbar.rb"
-(cd "$OUT" && shasum -a 256 "Herdrbar-$MARKETING_VERSION.zip" herdrbar.rb > SHA256SUMS)
+(cd "$OUT" && shasum -a 256 "Herdrbar-$MARKETING_VERSION.zip" "Herdrbar-$MARKETING_VERSION.dmg" herdrbar.rb > SHA256SUMS)
 echo "Done: $OUT"
 ls -la "$OUT"
