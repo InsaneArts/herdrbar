@@ -1,9 +1,8 @@
 import AppKit
 import ServiceManagement
-import UserNotifications
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate {
     private var fleet = Fleet()
     private let menu = StatusMenu()
     private var install = HerdrInstall.locate()
@@ -12,19 +11,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private let hotkeys = Hotkeys()
     private lazy var settings = SettingsModel(hotkeys: hotkeys)
     private let settingsWindow = SettingsWindow()
+    private let cards = CardStack()
     private lazy var notifier = Notifier(.init(
-        post: { notice in
-            let content = UNMutableNotificationContent()
-            content.title = notice.title
-            content.body = notice.body
-            content.sound = notice.playsSound ? .default : nil
-            content.userInfo = ["machine": notice.key.machine, "terminal": notice.key.terminalID]
-            UNUserNotificationCenter.current().add(
-                UNNotificationRequest(identifier: notice.identifier, content: content, trigger: nil), withCompletionHandler: nil)
+        post: { [weak self] notice in
+            guard CardPreferences.load().enabled else { return }
+            self?.cards.show(notice)
+            if notice.playsSound { NSSound(named: "Glass")?.play() }
         },
-        remove: { identifiers in
-            UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: identifiers)
-        },
+        remove: { [weak self] identifiers in self?.cards.remove(identifiers) },
         currentAgent: { [weak self] key in self?.fleet.agent(key) },
         herdrIsFrontmost: { await Terminals.herdrWindowIsFront(ClientLocator.localClients()) },
         notifyDone: { [weak self] in self?.settings.notifyDone ?? true },
@@ -38,7 +32,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private var tasks: [Task<Void, Never>] = []
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        UNUserNotificationCenter.current().delegate = self
         let source = LocalSource(socketPath: install.socketPath)
         self.source = source
         menu.onWillOpen = { [weak self] in
@@ -47,6 +40,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             self?.render()
         }
         menu.onSelect = { [weak self] key in self?.jump(to: key) }
+        cards.onClick = { [weak self] key in self?.jump(to: key) }
         menu.onOpenHerdr = { [weak self] in
             guard let self else { return }
             Task { await self.jump.raiseHerdr(install: self.install) }
@@ -208,38 +202,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         settingsWindow.show(settings)
     }
 
-    /// First launch: the menu opens once so you see where Herdrbar lives; macOS asks about notifications
-    /// after it closes. An installed copy also turns on Open at Login; a development build does not.
+    /// First launch: the menu opens once so you see where Herdrbar lives. An installed copy also turns on
+    /// Open at Login; a development build does not.
     private func welcome() {
-        let center = UNUserNotificationCenter.current()
-        guard !UserDefaults.standard.bool(forKey: "LaunchedBefore") else {
-            Task { _ = try? await center.requestAuthorization(options: [.alert, .sound]) }
-            return
-        }
+        guard !UserDefaults.standard.bool(forKey: "LaunchedBefore") else { return }
         UserDefaults.standard.set(true, forKey: "LaunchedBefore")
         if Bundle.main.bundleURL.deletingLastPathComponent().lastPathComponent == "Applications" {
             try? SMAppService.mainApp.register()
-        }
-        menu.onDidClose = { [weak self] in
-            self?.menu.onDidClose = nil
-            Task { _ = try? await center.requestAuthorization(options: [.alert, .sound]) }
         }
         Task {
             try? await Task.sleep(for: .milliseconds(600))
             menu.open()
         }
-    }
-
-    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter,
-                                            didReceive response: UNNotificationResponse) async {
-        let info = response.notification.request.content.userInfo
-        guard let machine = info["machine"] as? String, let terminal = info["terminal"] as? String else { return }
-        await MainActor.run { jump(to: AgentKey(machine: machine, terminalID: terminal)) }
-    }
-
-    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter,
-                                            willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
-        [.banner, .list, .sound]
     }
 }
 

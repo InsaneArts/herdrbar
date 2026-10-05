@@ -2,16 +2,17 @@ import AppKit
 import Carbon.HIToolbox
 import ServiceManagement
 import SwiftUI
-import UserNotifications
 
 @MainActor @Observable
 final class SettingsModel {
     let hotkeys: Hotkeys
     var openAtLogin = SMAppService.mainApp.status == .enabled
     var loginError: String?
-    var notificationsDenied = false
     var automationDenied = false
     var recording: HotkeyAction?
+    var cards = CardPreferences.load() {
+        didSet { cards.save() }
+    }
     var shortcutError: [HotkeyAction: String] = [:]
     private var monitor: Any?
 
@@ -27,10 +28,6 @@ final class SettingsModel {
     func refresh() {
         openAtLogin = SMAppService.mainApp.status == .enabled
         automationDenied = UserDefaults.standard.bool(forKey: "AutomationDenied")
-        Task {
-            let settings = await UNUserNotificationCenter.current().notificationSettings()
-            notificationsDenied = settings.authorizationStatus == .denied
-        }
     }
 
     func setOpenAtLogin(_ on: Bool) {
@@ -95,12 +92,19 @@ struct SettingsView: View {
                 }
             }
             Section("Notifications") {
-                Text("Herdrbar always tells you when an agent needs your answer.")
-                    .foregroundStyle(.secondary)
-                Toggle("Also notify when an agent finishes", isOn: $model.notifyDone)
-                if model.notificationsDenied {
-                    fixIt("Notifications are off for Herdrbar.", button: "Open System Settings…",
-                          url: "x-apple.systempreferences:com.apple.Notifications-Settings.extension?id=\(Bundle.main.bundleIdentifier ?? "")")
+                Toggle("Show notifications", isOn: $model.cards.enabled)
+                if model.cards.enabled {
+                    Toggle("Also when an agent finishes", isOn: $model.notifyDone)
+                    Picker("Position", selection: $model.cards.corner) {
+                        ForEach(CardCorner.allCases, id: \.self) { Text($0.title) }
+                    }
+                    Picker("Display", selection: $model.cards.display) {
+                        ForEach(CardDisplay.allCases, id: \.self) { Text($0.title) }
+                    }
+                    Picker("Layer", selection: $model.cards.layer) {
+                        ForEach(CardLayer.allCases, id: \.self) { Text($0.title) }
+                    }
+                    Toggle("Show on every Space", isOn: $model.cards.everySpace)
                 }
             }
             Section("Keyboard Shortcuts") {
@@ -164,6 +168,8 @@ final class SettingsWindow {
             window.title = "Herdrbar Settings"
             window.styleMask = [.titled, .closable]
             window.isReleasedWhenClosed = false
+            // Above other apps' windows, so it never opens hidden behind them.
+            window.level = .floating
             window.center()
             self.window = window
         }

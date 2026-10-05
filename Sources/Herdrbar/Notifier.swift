@@ -7,6 +7,13 @@ struct AgentNotice: Equatable, Sendable {
     var title: String
     var body: String
     var playsSound: Bool
+    /// The parts a Herdrbar card arranges its own way.
+    var blocked: Bool
+    var reminder: Bool
+    var agentName: String
+    var place: String
+    /// nil when the agent has no usable task title.
+    var task: String?
 
     /// `reminder` is the one follow-up for an agent that has been waiting a long time.
     init(agent: Agent, reminder: Bool = false) {
@@ -16,6 +23,11 @@ struct AgentNotice: Equatable, Sendable {
         let place = agent.key.machine == Fleet.local ? agent.workspaceLabel : "\(agent.workspaceLabel) on \(agent.key.machine)"
         let task = MenuRows.title(for: agent)
         let blocked = agent.status == .blocked
+        self.blocked = blocked
+        self.reminder = reminder
+        agentName = name
+        self.place = place
+        self.task = task == name ? nil : task
         if task == name {
             // No usable task title: say who and where instead.
             title = "\(name) in \(place)"

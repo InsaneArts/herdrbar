@@ -34,7 +34,8 @@ go there.
 
 ## Know when an agent needs you
 
-A notification arrives when an agent is blocked, and when one finishes. Click it to jump to the agent.
+A card drops in when an agent is blocked, and when one finishes. It shows herdr's logo, the task, and where the
+agent runs. Click it to jump to the agent.
 
 Herdrbar stays quiet while herdr's own window is in front, because herdr already shows the change there. A
 notification goes away when its agent no longer needs you. An agent that has waited 15 minutes gets one reminder.
@@ -110,7 +111,8 @@ Choose whether Herdrbar opens at login and whether finished agents notify you. R
 opens the menu, and one goes to the next agent that needs you. Both are unset until you record them, so they
 don't collide with your herdr or editor keys.
 
-To turn notifications off completely, or to silence their sound, use System Settings > Notifications > Herdrbar.
+In Settings you can also turn notifications off, and choose where cards appear: the corner, the display, above
+your windows or on the desktop, and on every Space or only the current one. The Test buttons show sample cards.
 
 <br clear="right" />
 
