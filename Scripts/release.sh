@@ -28,7 +28,8 @@ SIGNING_MODE=release APP_IDENTITY="$APP_IDENTITY" ARCHES="arm64 x86_64" Scripts/
 
 echo "==> verify signature"
 codesign --verify --deep --strict --verbose=2 Herdrbar.app
-codesign -dv Herdrbar.app 2>&1 | grep -q "TeamIdentifier=$TEAM_ID" || { echo "Signed with the wrong team." >&2; exit 1; }
+# (Read whole first: under pipefail, `codesign | grep -q` fails whenever grep stops reading early.)
+[[ "$(codesign -dv Herdrbar.app 2>&1)" == *"TeamIdentifier=$TEAM_ID"* ]] || { echo "Signed with the wrong team." >&2; exit 1; }
 lipo -archs Herdrbar.app/Contents/MacOS/Herdrbar
 
 echo "==> notarize"
