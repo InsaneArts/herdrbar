@@ -41,7 +41,7 @@ final class Notifier {
         var remove: ([String]) -> Void
         var currentAgent: (AgentKey) -> Agent?
         /// True while herdr's window is in front: herdr's own UI shows the change.
-        var herdrIsFrontmost: () async -> Bool
+        var herdrIsFrontmost: @MainActor () async -> Bool
         var notifyDone: () -> Bool
         /// True while the user paused notifications from the menu.
         var paused: () -> Bool = { false }

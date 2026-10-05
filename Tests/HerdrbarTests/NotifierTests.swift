@@ -97,6 +97,32 @@ import Testing
         #expect(spy.posted.isEmpty)
     }
 
+    /// The front-window check reads the process table and AppKit, which belong to the main thread. AppDelegate
+    /// wrote it in a nonisolated context (a lazy property's initializer), where it ran on a background thread
+    /// and crashed the app.
+    @Test func checksHerdrsWindowOnTheMainThread() async throws {
+        let spy = Spy(), checks = Checks(), blocked = agent("a", .blocked)
+        spy.agents[blocked.key] = blocked
+        let notifier = Notifier(Self.environment(spy, checks))
+        notifier.handle(Transitions(needsYou: [blocked]))
+        #expect(await posted(spy, count: 1))
+        #expect(checks.onMain == [true])
+    }
+
+    final class Checks: @unchecked Sendable {
+        var onMain: [Bool] = []
+    }
+
+    private nonisolated static func environment(_ spy: Spy, _ checks: Checks) -> Notifier.Environment {
+        Notifier.Environment(
+            post: { spy.posted.append($0) }, remove: { _ in }, currentAgent: { spy.agents[$0] },
+            herdrIsFrontmost: {
+                checks.onMain.append(pthread_main_np() != 0)
+                return false
+            },
+            notifyDone: { true }, paused: { false }, confirmDelay: .milliseconds(30))
+    }
+
     @Test func finishedAgentsFollowTheSetting() async throws {
         let spy = Spy(), notifier = make(spy), done = agent("a", .done)
         spy.agents[done.key] = done
