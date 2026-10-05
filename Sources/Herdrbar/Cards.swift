@@ -82,6 +82,16 @@ enum CardLayout {
     static func panelFrame(index: Int, corner: CardCorner, in area: CGRect) -> CGRect {
         cardFrame(index: index, corner: corner, in: area).insetBy(dx: -padding, dy: -padding)
     }
+
+    /// How far a card has slid to its new slot at `k` (0…1) of the move: fast out, a little past the slot, back.
+    static func slide(_ k: Double) -> Double {
+        let c1 = 1.2, c3 = c1 + 1, x = k - 1
+        return k <= 0 ? 0 : k >= 1 ? 1 : 1 + c3 * x * x * x + c1 * x * x
+    }
+
+    static func mix(_ a: CGRect, _ b: CGRect, _ k: Double) -> CGRect {
+        CGRect(x: a.minX + (b.minX - a.minX) * k, y: a.minY + (b.minY - a.minY) * k, width: a.width, height: a.height)
+    }
 }
 
 /// A card's headline. The first line of each kind says plainly what happened; the others have fun with it.
@@ -127,6 +137,8 @@ final class CardStack {
     /// Newest first: index 0 sits in the corner.
     private var cards: [Card] = []
     private var timers: [String: Task<Void, Never>] = [:]
+    /// The cards moving to new slots. A new slide replaces a card's old one, from wherever it is.
+    private var slides: [String: Slide] = [:]
     /// Fixed while any card is up, so the stack never jumps to another display or corner.
     private var anchor: (corner: CardCorner, area: CGRect)?
 
@@ -174,6 +186,7 @@ final class CardStack {
         guard let index = cards.firstIndex(where: { $0.id == id }) else { return }
         let card = cards.remove(at: index)
         timers.removeValue(forKey: id)?.cancel()
+        slides[id] = nil
         card.model.leaving = true
         Task {
             try? await Task.sleep(for: .milliseconds(260))
@@ -195,11 +208,13 @@ final class CardStack {
 
     private func layout(animated: Bool) {
         guard let anchor else { return }
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = animated ? 0.4 : 0
-            context.timingFunction = CAMediaTimingFunction(controlPoints: 0.2, 0.9, 0.25, 1.1)
-            for (index, card) in cards.enumerated() {
-                card.panel.animator().setFrame(CardLayout.panelFrame(index: index, corner: anchor.corner, in: anchor.area), display: true)
+        for (index, card) in cards.enumerated() {
+            let target = CardLayout.panelFrame(index: index, corner: anchor.corner, in: anchor.area)
+            if animated, card.panel.frame != target {
+                slides[card.id] = Slide(card.panel, to: target)
+            } else {
+                slides[card.id] = nil
+                card.panel.setFrame(target, display: true)
             }
         }
     }
@@ -228,6 +243,37 @@ final class CardStack {
             panel.collectionBehavior.insert(.stationary)
         }
         return panel
+    }
+}
+
+/// Moves a card's window to its new slot over 0.4 s, a step every display frame. NSWindow's animator moves a
+/// borderless panel at once, so the stack jumped instead of sliding.
+@MainActor
+private final class Slide: NSObject {
+    private let panel: NSPanel
+    private let from: CGRect
+    private let to: CGRect
+    private let start = CACurrentMediaTime()
+    private var link: CADisplayLink?
+    static let duration = 0.4
+
+    init(_ panel: NSPanel, to: CGRect) {
+        self.panel = panel
+        from = panel.frame
+        self.to = to
+        super.init()
+        link = panel.displayLink(target: self, selector: #selector(step))
+        link?.add(to: .main, forMode: .common)
+    }
+
+    @objc private func step(_ link: CADisplayLink) {
+        let k = min(1, (CACurrentMediaTime() - start) / Self.duration)
+        panel.setFrame(CardLayout.mix(from, to, CardLayout.slide(k)), display: true)
+        if k >= 1 { link.invalidate() }
+    }
+
+    isolated deinit {
+        link?.invalidate()
     }
 }
 

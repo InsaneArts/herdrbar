@@ -25,6 +25,16 @@ import Testing
         #expect(CardLayout.cardFrame(index: 0, corner: .topCenter, in: area).midX == area.midX)
     }
 
+    @Test func aCardSlidesToItsNewSlotWithASmallOvershoot() {
+        #expect(CardLayout.slide(0) == 0)
+        #expect(abs(CardLayout.slide(1) - 1) < 1e-9)
+        let path = (1...99).map { CardLayout.slide(Double($0) / 100) }
+        #expect(path.max()! > 1 && path.max()! < 1.1)  // past the slot, a little, then back
+        #expect(zip(path, path.dropFirst()).prefix(60).allSatisfy { $0 < $1 })  // no step back on the way
+        let a = CGRect(x: 0, y: 0, width: 10, height: 10), b = CGRect(x: 100, y: 50, width: 10, height: 10)
+        #expect(CardLayout.mix(a, b, 0.5) == CGRect(x: 50, y: 25, width: 10, height: 10))
+    }
+
     @Test func thePanelLeavesRoomForTheShadowAndTheSquash() {
         let card = CardLayout.cardFrame(index: 0, corner: .topLeft, in: area)
         #expect(CardLayout.panelFrame(index: 0, corner: .topLeft, in: area) == card.insetBy(dx: -CardLayout.padding, dy: -CardLayout.padding))
