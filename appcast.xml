@@ -1,0 +1,14 @@
+<?xml version="1.0" standalone="yes"?>
+<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
+    <channel>
+        <title>Herdrbar</title>
+        <!--
+          Sparkle's update feed, read from main at
+          https://raw.githubusercontent.com/InsaneArts/herdrbar/main/appcast.xml
+
+          Scripts/release.sh rewrites this file with generate_appcast; it is not edited by hand. Until the first
+          release with Sparkle it is empty on purpose: an empty channel reports "up to date", a missing file
+          reports an error.
+        -->
+    </channel>
+</rss>

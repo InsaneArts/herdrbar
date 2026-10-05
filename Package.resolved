@@ -1,15 +1,24 @@
 {
-  "originHash": "fa15493859b58e3ef0dcb43e1d2ea8fbd6df8ea2e3c41de45c35b78a9edc0abf",
-  "pins": [
+  "originHash" : "fa15493859b58e3ef0dcb43e1d2ea8fbd6df8ea2e3c41de45c35b78a9edc0abf",
+  "pins" : [
     {
-      "identity": "aurora",
-      "kind": "remoteSourceControl",
-      "location": "https://github.com/tornikegomareli/Aurora.git",
-      "state": {
-        "revision": "a3f9296a1e7744529b69d8a9f9e360bf3c8c81bf",
-        "version": "0.5.2"
+      "identity" : "aurora",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/tornikegomareli/Aurora.git",
+      "state" : {
+        "revision" : "a3f9296a1e7744529b69d8a9f9e360bf3c8c81bf",
+        "version" : "0.5.2"
+      }
+    },
+    {
+      "identity" : "sparkle",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/sparkle-project/Sparkle.git",
+      "state" : {
+        "revision" : "eef1a539a373c1f1a320624b1130fc5de7b2e100",
+        "version" : "2.10.0"
       }
     }
   ],
-  "version": 3
+  "version" : 3
 }

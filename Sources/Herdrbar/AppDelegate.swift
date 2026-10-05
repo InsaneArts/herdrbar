@@ -9,7 +9,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var source: LocalSource?
     private let jump = Jump()
     private let hotkeys = Hotkeys()
-    private lazy var settings = SettingsModel(hotkeys: hotkeys)
+    private let updater = Updater()
+    private lazy var settings = SettingsModel(hotkeys: hotkeys, updater: updater)
     private let settingsWindow = SettingsWindow()
     private let cards = CardStack()
     private lazy var notifier = Notifier(.init(
@@ -70,6 +71,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         })
         render()
         welcome()
+        updater.start()
     }
 
     /// Opening the app again from Finder or Spotlight shows Settings: the way back when the notch hides the icon.

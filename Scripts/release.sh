@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Builds a signed, notarized, stapled Herdrbar for Apple silicon and Intel from a clean checkout, then zips
-# it, packs a disk image, writes checksums, and fills in the Homebrew cask. It publishes nothing; see
-# RELEASING.md.
+# it, packs a disk image, writes checksums, fills in the Homebrew cask, and adds the signed update to
+# appcast.xml. It publishes nothing; see RELEASING.md.
 #
 #   Scripts/release.sh            # version and build number come from version.env
 set -euo pipefail
@@ -46,5 +46,15 @@ ditto --norsrc -c -k --keepParent Herdrbar.app "$ZIP"
 Scripts/make_dmg.sh Herdrbar.app "$OUT/Herdrbar-$MARKETING_VERSION.dmg"
 Scripts/generate-cask.sh "$MARKETING_VERSION" "$ZIP" "$OUT/herdrbar.rb"
 (cd "$OUT" && shasum -a 256 "Herdrbar-$MARKETING_VERSION.zip" "Herdrbar-$MARKETING_VERSION.dmg" herdrbar.rb > SHA256SUMS)
+
+# Sparkle updates from the zip. generate_appcast signs it with the EdDSA key in the login Keychain (the first
+# run asks for Keychain access: choose Always Allow) and keeps the five newest versions in appcast.xml.
+echo "==> Sparkle feed"
+mkdir -p "$OUT/sparkle"
+cp "$ZIP" "$OUT/sparkle/"
+.build/artifacts/sparkle/Sparkle/bin/generate_appcast \
+  --download-url-prefix "https://github.com/InsaneArts/herdrbar/releases/download/v$MARKETING_VERSION/" \
+  --link "https://insanearts.github.io/herdrbar/" --maximum-versions 5 -o "$ROOT/appcast.xml" "$OUT/sparkle"
+grep -q "sparkle:edSignature" appcast.xml || { echo "appcast.xml has no EdDSA signature." >&2; exit 1; }
 echo "Done: $OUT"
 ls -la "$OUT"

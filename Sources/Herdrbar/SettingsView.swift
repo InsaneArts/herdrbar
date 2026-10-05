@@ -6,6 +6,7 @@ import SwiftUI
 @MainActor @Observable
 final class SettingsModel {
     let hotkeys: Hotkeys
+    let updater: Updater
     var openAtLogin = SMAppService.mainApp.status == .enabled
     var loginError: String?
     var automationDenied = false
@@ -16,8 +17,9 @@ final class SettingsModel {
     var shortcutError: [HotkeyAction: String] = [:]
     private var monitor: Any?
 
-    init(hotkeys: Hotkeys) {
+    init(hotkeys: Hotkeys, updater: Updater) {
         self.hotkeys = hotkeys
+        self.updater = updater
     }
 
     var notifyDone: Bool {
@@ -122,11 +124,21 @@ struct SettingsView: View {
                           url: "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation")
                 }
             }
-            Section {
-                Text(["Herdrbar", Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String]
-                    .compactMap(\.self).joined(separator: " "))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+            Section("Updates") {
+                @Bindable var updater = model.updater
+                LabeledContent {
+                    Button("Check for Updates…") { updater.checkForUpdates() }
+                        .disabled(!updater.canCheckForUpdates)
+                } label: {
+                    Text(["Herdrbar", Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String]
+                        .compactMap(\.self).joined(separator: " "))
+                    Text(updater.availableVersion.map { "Version \($0) is available." }
+                        ?? updater.lastCheckedAt.map { "Last checked \($0.formatted(.relative(presentation: .named)))." }
+                        ?? "Not checked yet.")
+                }
+                Toggle("Check for updates automatically", isOn: $updater.automaticallyChecksForUpdates)
+                Toggle("Download updates automatically", isOn: $updater.automaticallyDownloadsUpdates)
+                    .disabled(!updater.automaticallyChecksForUpdates)
             }
         }
         .formStyle(.grouped)

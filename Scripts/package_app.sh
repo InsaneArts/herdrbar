@@ -50,6 +50,11 @@ if [[ "$MENU_BAR_APP" == "1" ]]; then
   LSUI_VALUE="true"
 fi
 
+# Sparkle's feed: appcast.xml on main, rewritten by Scripts/release.sh. SPARKLE_FEED_URL points a test build
+# at a local feed. The key is the public half of the EdDSA key in the login Keychain (Scripts/release.sh).
+SPARKLE_FEED_URL=${SPARKLE_FEED_URL:-https://raw.githubusercontent.com/InsaneArts/herdrbar/main/appcast.xml}
+SPARKLE_PUBLIC_KEY="CS7EqGMvprKkjontSt/uLAG3gkw4CSwaMKVLd+W1UV4="
+
 BUILD_TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 GIT_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 
@@ -69,6 +74,11 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>LSUIElement</key><${LSUI_VALUE}/>
     <key>CFBundleIconFile</key><string>Icon</string>
     <key>NSAppleEventsUsageDescription</key><string>Herdrbar brings the window running herdr to the front when you pick an agent.</string>
+    <key>SUFeedURL</key><string>${SPARKLE_FEED_URL}</string>
+    <key>SUPublicEDKey</key><string>${SPARKLE_PUBLIC_KEY}</string>
+    <key>SUEnableAutomaticChecks</key><true/>
+    <key>SUScheduledCheckInterval</key><integer>86400</integer>
+    <key>SUAllowsAutomaticUpdates</key><true/>
     <key>BuildTimestamp</key><string>${BUILD_TIMESTAMP}</string>
     <key>GitCommit</key><string>${GIT_COMMIT}</string>
 </dict>
@@ -124,7 +134,7 @@ if [[ ${#SWIFTPM_BUNDLES[@]} -gt 0 ]]; then
 fi
 
 # Embed frameworks if any exist in the build folder.
-FRAMEWORK_DIRS=(".build/$CONF" ".build/${ARCH_LIST[0]}-apple-macosx/$CONF")
+FRAMEWORK_DIRS=("$BIN_DIR" ".build/$CONF" ".build/${ARCH_LIST[0]}-apple-macosx/$CONF")
 for dir in "${FRAMEWORK_DIRS[@]}"; do
   if compgen -G "${dir}/*.framework" >/dev/null; then
     cp -R "${dir}/"*.framework "$APP/Contents/Frameworks/"
@@ -172,11 +182,28 @@ else
   CODESIGN_ARGS=(--force --options runtime --sign "$APP_IDENTITY")
 fi
 
-# Sign embedded frameworks and their nested binaries before the app bundle.
+# Sparkle ships prebuilt helpers, ad-hoc signed, which notarization rejects. codesign seals a bundle by hashing
+# what is inside it, so they are signed inside-out: each helper bundle, then the framework, then the app.
+sign_sparkle() {
+  local sparkle="$APP/Contents/Frameworks/Sparkle.framework" target
+  [[ -d "$sparkle" ]] || return 0
+  for target in \
+    "$sparkle/Versions/B/XPCServices/Downloader.xpc" \
+    "$sparkle/Versions/B/XPCServices/Installer.xpc" \
+    "$sparkle/Versions/B/Updater.app" \
+    "$sparkle/Versions/B/Autoupdate" \
+    "$sparkle"; do
+    [[ -e "$target" ]] && codesign "${CODESIGN_ARGS[@]}" --preserve-metadata=entitlements "$target"
+  done
+  return 0
+}
+sign_sparkle
+
+# Sign other embedded frameworks and their nested binaries before the app bundle.
 sign_frameworks() {
   local fw
   for fw in "$APP/Contents/Frameworks/"*.framework; do
-    if [[ ! -d "$fw" ]]; then
+    if [[ ! -d "$fw" || "$(basename "$fw")" == Sparkle.framework ]]; then
       continue
     fi
     while IFS= read -r -d '' bin; do

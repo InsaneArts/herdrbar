@@ -7,11 +7,16 @@ cask "herdrbar" do
   desc "Menu bar companion for herdr: see which agent needs you and jump to it"
   homepage "https://github.com/InsaneArts/herdrbar"
 
+  auto_updates true
   depends_on macos: ">= :sequoia"
 
   app "Herdrbar.app"
 
   uninstall quit: "com.tornikegomareli.Herdrbar"
 
-  zap trash: "~/Library/Preferences/com.tornikegomareli.Herdrbar.plist"
+  zap trash: [
+    "~/Library/Caches/com.tornikegomareli.Herdrbar",
+    "~/Library/HTTPStorages/com.tornikegomareli.Herdrbar",
+    "~/Library/Preferences/com.tornikegomareli.Herdrbar.plist",
+  ]
 end
