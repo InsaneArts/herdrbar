@@ -11,6 +11,15 @@
           reports an error.
         -->
         <item>
+            <title>0.2.1</title>
+            <pubDate>Mon, 05 Oct 2026 14:31:18 +0400</pubDate>
+            <link>https://insanearts.github.io/herdrbar/</link>
+            <sparkle:version>3</sparkle:version>
+            <sparkle:shortVersionString>0.2.1</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://github.com/InsaneArts/herdrbar/releases/download/v0.2.1/Herdrbar-0.2.1.zip" length="2196651" type="application/octet-stream" sparkle:edSignature="PWugoiYrA+NS8pAaL0i/v0mqPBL6TMoLHTUeXuRGgmS/KYXQPWEoWSZdBPe7MeKQ/yaA5+x5uBxFm6PpXx0aCQ=="/>
+        </item>
+        <item>
             <title>0.2.0</title>
             <pubDate>Mon, 05 Oct 2026 12:41:26 +0400</pubDate>
             <link>https://insanearts.github.io/herdrbar/</link>
