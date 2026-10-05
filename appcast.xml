@@ -10,5 +10,14 @@
           release with Sparkle it is empty on purpose: an empty channel reports "up to date", a missing file
           reports an error.
         -->
+        <item>
+            <title>0.2.0</title>
+            <pubDate>Mon, 05 Oct 2026 12:41:26 +0400</pubDate>
+            <link>https://insanearts.github.io/herdrbar/</link>
+            <sparkle:version>2</sparkle:version>
+            <sparkle:shortVersionString>0.2.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://github.com/InsaneArts/herdrbar/releases/download/v0.2.0/Herdrbar-0.2.0.zip" length="2189336" type="application/octet-stream" sparkle:edSignature="lZHuyKtTaILFexuylpeJ6ONfRsa9g7nw/aCVSXzS40iW7oU6FOOjaTrlz2QV7hTmzBzDLRFaY6ReIlKDQNo8CQ=="/>
+        </item>
     </channel>
 </rss>
